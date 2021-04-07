@@ -16,7 +16,7 @@ namespace HexCoven
         static readonly IPAddress ListenHost = IPAddress.Any;
         const int Port = 65530;
 
-        static GameManager pendingGame = new GameManager();
+        public static GameManager pendingGame = new GameManager();
 
         static void Main()
         {
@@ -38,7 +38,7 @@ namespace HexCoven
             {
                 if (pendingGame.State != GameState.WaitingForPlayers)
                 {
-                    // TODO: re-place other players?
+                    Console.Error.WriteLine($"pendingGame state was invalid! {pendingGame.State}");
                     pendingGame = new GameManager();
                 }
 

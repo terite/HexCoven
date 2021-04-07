@@ -47,7 +47,6 @@ namespace HexCoven
         void ReceiveThread(CancellationToken cancellationToken)
         {
             var recBuffer = new byte[10 * 1024];
-            int i;
             while (true)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -55,6 +54,8 @@ namespace HexCoven
                     Console.Error.WriteLine($"Connection cancelled via token");
                     break;
                 }
+
+                int i;
                 try
                 {
                     i = tcpStream.Read(recBuffer, 0, recBuffer.Length);
@@ -106,6 +107,7 @@ namespace HexCoven
             }
 
             ReceiveBufferLen -= unhandledIndex;
+
             // Move remaining bytes to the beginning of the buffer
             if (ReceiveBufferLen > 0)
             {
@@ -127,7 +129,17 @@ namespace HexCoven
         public void Send(in Message message)
         {
             if (connected)
-                message.WriteTo(tcpStream);
+            {
+                try
+                {
+                    message.WriteTo(tcpStream);
+                } catch (Exception ex)
+                {
+                    Console.Error.WriteLine($"Error while sending to {this}: {ex}");
+                    Close();
+                }
+
+            }
             else
                 Console.Error.WriteLine($"Ignoring write to disconnected client");
         }

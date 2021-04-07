@@ -5,6 +5,10 @@ namespace HexCoven
 {
     public class GameManager
     {
+        static int lastGameId = 0;
+
+        int gameId;
+
         GamePlayer? player1;
         GamePlayer? player2;
 
@@ -12,6 +16,7 @@ namespace HexCoven
 
         public GameManager()
         {
+            gameId = ++lastGameId;
             var tickSwapTimer = new System.Timers.Timer(250);
             tickSwapTimer.Elapsed += TickSwapTeams;
             tickSwapTimer.Start();
@@ -92,7 +97,6 @@ namespace HexCoven
                 return;
             }
 
-            // TODO: send game back to pending games list
             State = GameState.Complete;
             player1 = null;
             player2 = null;
@@ -108,8 +112,6 @@ namespace HexCoven
             }
             else if (State == GameState.Playing)
             {
-                // TODO: make sure otherPlayer knows they won because of disconnect
-                // SUPER TODO: unless otherPlayer lost
             }
             else if (State == GameState.Complete)
             {
@@ -258,6 +260,17 @@ namespace HexCoven
             player1 = null;
             player2?.Close();
             player2 = null;
+
+            lock (Program.pendingGame)
+            {
+                if (Program.pendingGame == this)
+                    Program.pendingGame = new GameManager();
+            }
+        }
+
+        public override string ToString()
+        {
+            return $"GameManager(id={gameId})";
         }
     }
 }
