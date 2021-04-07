@@ -23,7 +23,8 @@ namespace HexCoven
 
         public ChessTeam Team { get; set; } = ChessTeam.Black;
         public bool IsReady { get; set; }
-        public bool DidSurrender { get; set; }
+        public bool SentSurrender { get; set; }
+        public bool SentDisconnect { get; set; }
 
         public GamePlayer(TcpClient client)
         {
@@ -122,6 +123,12 @@ namespace HexCoven
                 case MessageType.ApproveTeamChange:
                     Team = Team == ChessTeam.White ? ChessTeam.Black : ChessTeam.White;
                     break;
+                case MessageType.Surrender:
+                    SentSurrender = true;
+                    break;
+                case MessageType.Disconnect:
+                    SentDisconnect = true;
+                    break;
             }
             OnMessage?.Invoke(this, in message);
         }
@@ -162,7 +169,15 @@ namespace HexCoven
 
         public override string ToString()
         {
-            return $"GamePlayer({tcpClient.Client.RemoteEndPoint}, {Team})";
+            string remoteEp;
+            try
+            {
+                remoteEp = tcpClient.Client.RemoteEndPoint.ToString() ?? "this will never happen";
+            } catch (ObjectDisposedException)
+            {
+                remoteEp = "<disconnected>";
+            }
+            return $"GamePlayer({remoteEp}, {Team})";
         }
     }
 }

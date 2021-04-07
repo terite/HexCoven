@@ -81,46 +81,56 @@ namespace HexCoven
             sender.OnMessage -= Player_OnMessage;
             sender.OnDisconnect -= Player_OnDisconnect;
 
-            GamePlayer? otherPlayer;
-
+            GamePlayer? otherPlayer = null;
             if (sender == player1)
-            {
                 otherPlayer = player2;
-            }
             else if (sender == player2)
-            {
                 otherPlayer = player1;
-            }
             else
             {
-                Console.Error.WriteLine($"Unknown player disconnected!");
+                Console.Error.WriteLine($"Game {this} got message from unknown player {sender}");
                 return;
+            }
+
+            if (otherPlayer != null)
+            {
+                otherPlayer.OnMessage -= Player_OnMessage;
+                otherPlayer.OnDisconnect -= Player_OnDisconnect;
+            }
+
+            switch (State)
+            {
+                case GameState.WaitingForPlayers:
+                    if (otherPlayer != null)
+                        Program.PlacePlayer(otherPlayer);
+                    break;
+                case GameState.Playing:
+                    if (otherPlayer != null && !sender.SentSurrender)
+                    {
+                        Console.WriteLine($"Sending missing surrender message!");
+                        sender.SentSurrender = true;
+                        otherPlayer.Send(new Message(MessageType.Surrender));
+                    }
+                    /*
+                    if (otherPlayer != null && !sender.SentDisconnect)
+                    {
+                        Console.WriteLine($"Sending missing disconnect message!");
+                        sender.SentDisconnect = true;
+                        otherPlayer.Send(new Message(MessageType.Disconnect));
+                    }
+                    */
+                    State = GameState.Complete;
+                    break;
+                case GameState.Complete:
+                    break;
+                default:
+                    Console.Error.WriteLine($"Unknown game state: {State}");
+                    break;
             }
 
             State = GameState.Complete;
             player1 = null;
             player2 = null;
-
-            if (otherPlayer != null)
-            {
-                otherPlayer.OnDisconnect -= Player_OnDisconnect;
-                otherPlayer.OnMessage -= Player_OnMessage;
-            }
-            if (State == GameState.WaitingForPlayers && otherPlayer != null)
-            {
-                Program.PlacePlayer(otherPlayer);
-            }
-            else if (State == GameState.Playing)
-            {
-            }
-            else if (State == GameState.Complete)
-            {
-                // Just close the server? Ignore?
-            }
-            else
-            {
-                throw new Exception($"Unknown GameManager State: {State}");
-            }
         }
 
         private void Player_OnMessage(GamePlayer sender, in Message message)
@@ -217,7 +227,7 @@ namespace HexCoven
 
         private void HandleSurrender(GamePlayer sender, in Message message, GamePlayer? otherPlayer)
         {
-            if (sender.DidSurrender)
+            if (sender.SentSurrender)
                 Console.Error.WriteLine($"Sender {sender} surrendered twice!");
 
             if (State == GameState.WaitingForPlayers)
@@ -232,7 +242,7 @@ namespace HexCoven
                 return;
             }
 
-            sender.DidSurrender = true;
+            sender.SentSurrender = true;
             if (otherPlayer != null)
             {
                 State = GameState.Complete;
