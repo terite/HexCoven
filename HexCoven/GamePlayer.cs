@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Diagnostics;
 using System.Net.Sockets;
 using System.Threading;
-using System.Timers;
 
 namespace HexCoven
 {
@@ -153,10 +151,6 @@ namespace HexCoven
 
         public void Close()
         {
-            // Console.WriteLine("GamePlayer.Close() call");
-            // StackTrace st = new StackTrace(true);
-            // Console.WriteLine(st);
-
             tokenSource.Cancel();
             tcpClient.Close();
 
@@ -172,7 +166,7 @@ namespace HexCoven
             string remoteEp;
             try
             {
-                remoteEp = tcpClient.Client.RemoteEndPoint.ToString() ?? "this will never happen";
+                remoteEp = tcpClient.Client.RemoteEndPoint?.ToString() ?? "this will never happen";
             } catch (ObjectDisposedException)
             {
                 remoteEp = "<disconnected>";
