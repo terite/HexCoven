@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net.Sockets;
+using System.Text;
 
 namespace HexCoven
 {
@@ -7,22 +8,35 @@ namespace HexCoven
     {
         static int lastGameId = 0;
 
+        static readonly byte[][] PendingNames = {
+            Encoding.UTF8.GetBytes("Matching (●   )"),
+            Encoding.UTF8.GetBytes("Matching ( ●  )"),
+            Encoding.UTF8.GetBytes("Matching (  ● )"),
+            Encoding.UTF8.GetBytes("Matching (   ●)"),
+            Encoding.UTF8.GetBytes("Matching (  ● )"),
+            Encoding.UTF8.GetBytes("Matching ( ●  )"),
+        };
+
         int gameId;
 
         GamePlayer? player1;
         GamePlayer? player2;
+
+        float TimerDuration = 0f;
+        bool ShowClock = false;
 
         public GameState State { get; private set; } = GameState.WaitingForPlayers;
 
         public GameManager()
         {
             gameId = ++lastGameId;
-            var tickSwapTimer = new System.Timers.Timer(250);
-            tickSwapTimer.Elapsed += TickSwapTeams;
-            tickSwapTimer.Start();
+            var tickTimer = new System.Timers.Timer(Settings.MatchingIntervalMs);
+            tickTimer.Elapsed += TickTimer_Elapsed;
+            tickTimer.Start();
         }
 
-        private void TickSwapTeams(object sender, System.Timers.ElapsedEventArgs e)
+        int pendingNameIndex = 0;
+        private void TickTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
             if (State != GameState.WaitingForPlayers) return;
             var p1 = this.player1;
@@ -30,11 +44,14 @@ namespace HexCoven
 
             if (p1 != null && p2 != null) return;
 
+            var pendingName = PendingNames[pendingNameIndex++];
+            pendingNameIndex %= PendingNames.Length; ;
+
             if (p1 != null)
-                p1.SwapTeam();
+                p1.Send(new Message(MessageType.UpdateName, pendingName));
 
             if (p2 != null)
-                p2.SwapTeam();
+                p2.Send(new Message(MessageType.UpdateName, pendingName));
         }
 
         /// <summary>
@@ -60,7 +77,10 @@ namespace HexCoven
             }
 
             if (!addedPlayer)
+            {
+                player.Close("Game full");
                 throw new Exception("Game is full");
+            }
 
             return player1 != null && player2 != null;
         }
@@ -70,8 +90,14 @@ namespace HexCoven
             player.OnMessage += Player_OnMessage;
             player.OnDisconnect += Player_OnDisconnect;
 
-            if (otherPlayer?.Team == player.Team)
-                player.SwapTeam();
+            if (otherPlayer != null)
+            {
+                if (otherPlayer.Team == player.Team)
+                    player.SwapTeam();
+
+                player.Send(new Message(MessageType.UpdateName, Encoding.UTF8.GetBytes(otherPlayer.PlayerName)));
+                otherPlayer.Send(new Message(MessageType.UpdateName, Encoding.UTF8.GetBytes(player.PlayerName)));
+            }
 
             return player;
         }
@@ -111,14 +137,6 @@ namespace HexCoven
                         sender.SentSurrender = true;
                         otherPlayer.Send(new Message(MessageType.Surrender));
                     }
-                    /*
-                    if (otherPlayer != null && !sender.SentDisconnect)
-                    {
-                        Console.WriteLine($"Sending missing disconnect message!");
-                        sender.SentDisconnect = true;
-                        otherPlayer.Send(new Message(MessageType.Disconnect));
-                    }
-                    */
                     State = GameState.Complete;
                     break;
                 case GameState.Complete:
@@ -135,16 +153,14 @@ namespace HexCoven
 
         private void Player_OnMessage(GamePlayer sender, in Message message)
         {
-            string prefix;
+            string prefix = sender.ToString();
             GamePlayer? otherPlayer;
             if (sender == this.player1)
             {
-                prefix = "p1";
                 otherPlayer = player2;
             }
             else if (sender == this.player2)
             {
-                prefix = "p2";
                 otherPlayer = player1;
             }
             else
@@ -153,8 +169,9 @@ namespace HexCoven
                 return;
             }
 
-            if (message.Type != MessageType.Ping && message.Type != MessageType.Pong)
-                Console.WriteLine($"{prefix} -> {message.ToString()}");
+            if (Settings.LogInbound)
+                if (Settings.LogInboundPing || (message.Type != MessageType.Ping && message.Type != MessageType.Pong))
+                    Console.WriteLine($"<- {prefix} -- {message.ToString()}");
 
             switch (message.Type)
             {
@@ -165,6 +182,7 @@ namespace HexCoven
                 case MessageType.DenyTeamChange:
                 case MessageType.PreviewMovesOn:
                 case MessageType.PreviewMovesOff:
+                case MessageType.UpdateName:
                     if (otherPlayer != null)
                         otherPlayer.Send(message);
                     break;
@@ -172,14 +190,30 @@ namespace HexCoven
                 // Forward or warn
                 case MessageType.Promotion:
                 case MessageType.BoardState:
+                case MessageType.OfferDraw:
+                case MessageType.DenyDraw:
                     if (otherPlayer != null)
-                        otherPlayer.Send(message);
+                        otherPlayer.Send(in message);
+                    else
+                        Console.Error.WriteLine($"Cannot forward message, no other player! {message.ToString()}");
+                    break;
+
+                case MessageType.AcceptDraw:
+                case MessageType.FlagFall:
+                    State = GameState.Complete;
+                    if (otherPlayer != null)
+                        otherPlayer.Send(in message);
                     else
                         Console.Error.WriteLine($"Cannot forward message, no other player! {message.ToString()}");
                     break;
 
                 // Need to be handled
                 case MessageType.Ping:
+                    if (sender.NeedsConnect)
+                    {
+                        sender.Send(new Message(MessageType.Connect, Encoding.UTF8.GetBytes(otherPlayer?.PlayerName ?? "")));
+                        sender.NeedsConnect = false;
+                    }
                     if (otherPlayer != null)
                         otherPlayer.Send(in message);
                     else
@@ -191,7 +225,7 @@ namespace HexCoven
                     {
                         otherPlayer?.Send(in message);
                     }
-                    sender.Close();
+                    sender.Close("Disconnect message");
                     break;
                 case MessageType.ApproveTeamChange:
                     if (otherPlayer != null)
@@ -206,11 +240,7 @@ namespace HexCoven
                     break;
 
                 case MessageType.Ready:
-                    sender.IsReady = true;
-                    Player_OnReadyChange();
-                    break;
                 case MessageType.Unready:
-                    sender.IsReady = false;
                     Player_OnReadyChange();
                     break;
 
@@ -220,7 +250,9 @@ namespace HexCoven
                     break;
 
                 default:
-                    Console.Error.WriteLine($"Received unknown message {message.ToString()}");
+                    Console.Error.WriteLine($"Forwarding unknown message {message.ToString()}");
+                    if (otherPlayer != null)
+                        otherPlayer.Send(in message);
                     break;
             }
         }
@@ -256,19 +288,22 @@ namespace HexCoven
         {
             if (player1?.IsReady == true && player2?.IsReady == true)
             {
+                var p1 = player1!;
+                var p2 = player2!;
                 State = GameState.Playing;
-                player1?.Send(new Message(MessageType.StartMatch));
-                player2?.Send(new Message(MessageType.StartMatch));
+                p1.Send(new Message(MessageType.StartMatch, new GameParams(p1.Team, p1.PreviewMovesOn, TimerDuration, ShowClock).Serialize()));
+                p2.Send(new Message(MessageType.StartMatch, new GameParams(p2.Team, p2.PreviewMovesOn, TimerDuration, ShowClock).Serialize()));
             }
         }
 
         void ForceEndGame(string reason)
         {
+            var rstr = $"Force ending game: {reason}";
             State = GameState.Complete;
-            Console.Error.WriteLine($"Force ending game: {reason}");
-            player1?.Close();
+            Console.Error.WriteLine(rstr);
+            player1?.Close(rstr);
             player1 = null;
-            player2?.Close();
+            player2?.Close(rstr);
             player2 = null;
 
             lock (Program.pendingGame)

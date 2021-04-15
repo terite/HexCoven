@@ -2,8 +2,8 @@
 {
     public enum ChessTeam
     {
-        None,
-        White,
-        Black,
+        None = 0,
+        White = 1,
+        Black = 2,
     }
 }

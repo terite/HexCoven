@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net.Sockets;
-using System.Threading;
+using System.Text;
+using System.Timers;
 
 namespace HexCoven
 {
@@ -10,31 +11,109 @@ namespace HexCoven
         public event MessageEvent? OnMessage;
         public event Action<GamePlayer>? OnDisconnect;
 
-        TcpClient tcpClient;
-        NetworkStream tcpStream;
-        bool connected = true;
-        CancellationTokenSource tokenSource;
-        private Thread receiveThread;
+        readonly Socket Socket;
+        readonly SocketAsyncEventArgs ReadArg; 
+        string? closedReason = null;
 
         byte[] ReceiveBuffer = new byte[ushort.MaxValue];
         ushort ReceiveBufferLen = 0;
 
+        public string PlayerName { get; private set; } = "Unknown player";
         public ChessTeam Team { get; set; } = ChessTeam.Black;
         public bool IsReady { get; set; }
+        public bool PreviewMovesOn { get; set; }
+
         public bool SentSurrender { get; set; }
         public bool SentDisconnect { get; set; }
 
-        public GamePlayer(TcpClient client)
-        {
-            tcpClient = client;
-            tcpStream = client.GetStream();
+        public bool NeedsConnect { get; set; } = true;
 
-            tokenSource = new CancellationTokenSource();
-            receiveThread = new Thread(() =>
+        public GamePlayer(Socket socket)
+        {
+            var readArg = new SocketAsyncEventArgs();
+            readArg.Completed += IO_Completed;
+            readArg.SetBuffer(new byte[10 * 1024]);
+            this.ReadArg = readArg;
+
+            Socket = socket;
+            BeginReceive();
+
+            var timer = new Timer(1000);
+            timer.Elapsed += Timer_Elapsed;
+            timer.AutoReset = false;
+            timer.Start();
+        }
+
+        private void Timer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            if (NeedsConnect)
             {
-                ReceiveThread(tokenSource.Token);
-            });
-            receiveThread.Start();
+                Send(new Message(MessageType.Connect, ReadOnlySpan<byte>.Empty));
+                NeedsConnect = false;
+            }
+        }
+
+        void BeginReceive()
+        {
+            if (closedReason == null)
+                if (!Socket.ReceiveAsync(ReadArg))
+                    ProcessReceive(ReadArg);
+        }
+
+        void IO_Completed(object? sender, SocketAsyncEventArgs e)
+        {
+            // determine which type of operation just completed and call the associated handler
+            switch (e.LastOperation)
+            {
+                case SocketAsyncOperation.Receive:
+                    ProcessReceive(e);
+                    break;
+                case SocketAsyncOperation.Send:
+                    ProcessSend(e);
+                    break;
+                default:
+                    throw new ArgumentException("The last operation completed on the socket was not a receive or send");
+            }
+        }
+        private void ProcessReceive(SocketAsyncEventArgs e)
+        {
+            // check if the remote host closed the connection
+            if (e.BytesTransferred == 0) {
+                Close("No bytes transferred");
+                return;
+            }
+            if (e.SocketError != SocketError.Success)
+            {
+                Close($"Socket error: {e.SocketError}");
+                return;
+            }
+
+            try
+            {
+                var received = e.MemoryBuffer.Slice(e.Offset, e.BytesTransferred);
+                ReceiveBytes(received);
+            }
+            catch (Exception ex)
+            {
+                Close($"Error processing data: {ex.Message}");
+                return;
+            }
+            BeginReceive();
+        }
+
+        private void ProcessSend(SocketAsyncEventArgs e)
+        {
+            if (e.SocketError == SocketError.Success)
+            {
+                // read the next block of data send from the client
+                bool willRaiseEvent = Socket.ReceiveAsync(e);
+                if (!willRaiseEvent)
+                    ProcessReceive(e);
+            }
+            else
+            {
+                CloseClientSocket(e);
+            }
         }
 
         internal void SwapTeam()
@@ -43,42 +122,10 @@ namespace HexCoven
             Team = Team == ChessTeam.Black ? ChessTeam.White : ChessTeam.Black;
         }
 
-        void ReceiveThread(CancellationToken cancellationToken)
+        void ReceiveBytes(in ReadOnlyMemory<byte> received)
         {
-            var recBuffer = new byte[10 * 1024];
-            while (true)
-            {
-                if (cancellationToken.IsCancellationRequested)
-                {
-                    Console.Error.WriteLine($"Connection cancelled via token");
-                    break;
-                }
-
-                int i;
-                try
-                {
-                    i = tcpStream.Read(recBuffer, 0, recBuffer.Length);
-                } catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"Error while reading from socket {ex}");
-                    break;
-                }
-
-                if (i == 0)
-                {
-                    Console.Error.WriteLine($"Connection got 0 bytes");
-                    break;
-                }
-                ReceiveBytes(new ArraySegment<byte>(recBuffer, 0, i));
-            }
-            Console.WriteLine($"Receive thread got break");
-            Close();
-        }
-
-        void ReceiveBytes(ArraySegment<byte> received)
-        {
-            Array.Copy(received.Array!, received.Offset, ReceiveBuffer, ReceiveBufferLen, received.Count);
-            ReceiveBufferLen += (ushort)received.Count;
+            received.CopyTo(new Memory<byte>(ReceiveBuffer, ReceiveBufferLen, ReceiveBuffer.Length - ReceiveBufferLen));
+            ReceiveBufferLen += (ushort)received.Length;
 
             ushort unhandledIndex = 0;
 
@@ -91,13 +138,13 @@ namespace HexCoven
 
                 if (result == Message.TryReadResult.InvalidSignature)
                 {
-                    Close();
+                    Close("Because of invalid signature");
                     throw new Exception("Invalid signature!");
                 }
 
                 if (result != Message.TryReadResult.Success)
                 {
-                    Close();
+                    Close("Odd result");
                     throw new Exception($"wtf tryreadresult: {result}");
                 }
 
@@ -121,6 +168,25 @@ namespace HexCoven
                 case MessageType.ApproveTeamChange:
                     Team = Team == ChessTeam.White ? ChessTeam.Black : ChessTeam.White;
                     break;
+
+                case MessageType.Ready:
+                    IsReady = true;
+                    break;
+                case MessageType.Unready:
+                    IsReady = false;
+                    break;
+
+                case MessageType.PreviewMovesOn:
+                    PreviewMovesOn = true;
+                    break;
+                case MessageType.PreviewMovesOff:
+                    PreviewMovesOn = false;
+                    break;
+
+                case MessageType.UpdateName:
+                    PlayerName = Encoding.UTF8.GetString(message.Payload);
+                    break;
+
                 case MessageType.Surrender:
                     SentSurrender = true;
                     break;
@@ -133,15 +199,15 @@ namespace HexCoven
 
         public void Send(in Message message)
         {
-            if (connected)
+            if (closedReason == null)
             {
                 try
                 {
-                    message.WriteTo(tcpStream);
+                    message.WriteTo(Socket);
                 } catch (Exception ex)
                 {
                     Console.Error.WriteLine($"Error while sending to {this}: {ex}");
-                    Close();
+                    Close("Error calling WriteTo");
                 }
 
             }
@@ -149,16 +215,32 @@ namespace HexCoven
                 Console.Error.WriteLine($"Ignoring write to disconnected client");
         }
 
-        public void Close()
+        public void Close(string reason)
         {
-            tokenSource.Cancel();
-            tcpClient.Close();
+            if (Settings.LogCloseCalls)
+                Console.WriteLine($"GamePlayer.Close() call: {reason}");
 
-            if (connected)
+            CloseClientSocket(ReadArg);
+
+            if (closedReason == null)
             {
-                connected = false;
+                closedReason = reason;
                 OnDisconnect?.Invoke(this);
             }
+        }
+
+        private void CloseClientSocket(SocketAsyncEventArgs e)
+        {
+            // close the socket associated with the client
+            try
+            {
+                Socket.Shutdown(SocketShutdown.Send);
+            }
+            // throws if client process has already closed
+            catch (Exception) { }
+            Socket.Close();
+
+            ReadArg.Dispose();
         }
 
         public override string ToString()
@@ -166,12 +248,12 @@ namespace HexCoven
             string remoteEp;
             try
             {
-                remoteEp = tcpClient.Client.RemoteEndPoint?.ToString() ?? "this will never happen";
+                remoteEp = Socket.RemoteEndPoint?.ToString() ?? "this will never happen";
             } catch (ObjectDisposedException)
             {
                 remoteEp = "<disconnected>";
             }
-            return $"GamePlayer({remoteEp}, {Team})";
+            return $"GamePlayer({remoteEp}, {PlayerName}, {Team})";
         }
     }
 }

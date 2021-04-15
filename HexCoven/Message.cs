@@ -60,13 +60,17 @@ namespace HexCoven
             return TryReadResult.Success;
         }
 
-        public void WriteTo (NetworkStream stream)
+        public void WriteTo (Socket socket)
         {
-            stream.Write(Signature, 0, Signature.Length);
-            stream.Write(BitConverter.GetBytes((ushort)Payload.Length));
-            stream.Write(new byte[] { (byte)this.Type });
+            if (Settings.LogOutbound)
+                if (Settings.LogOutboundPing || (Type != MessageType.Ping && Type != MessageType.Pong))
+                    Console.WriteLine($"-> {socket.RemoteEndPoint} -- {this.ToString()}");
+
+            socket.Send(Signature);
+            socket.Send(BitConverter.GetBytes((ushort)Payload.Length));
+            socket.Send(new byte[] { (byte)this.Type });
             if (Payload.Length > 0)
-                stream.Write(Payload);
+                socket.Send(Payload);
         }
 
         public override string ToString()
@@ -74,7 +78,7 @@ namespace HexCoven
             string payloadStr;
             if (Payload.Length == 0)
                 payloadStr = String.Empty;
-            else if (Type == MessageType.BoardState)
+            else if (Type == MessageType.BoardState || Type == MessageType.Connect || Type == MessageType.UpdateName)
             {
                 payloadStr = System.Text.Encoding.UTF8.GetString(Payload);
             }

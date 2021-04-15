@@ -13,23 +13,25 @@ namespace HexCoven
 
     class Program
     {
-        static readonly IPAddress ListenHost = IPAddress.Any;
-        const int Port = 65530;
-
         public static GameManager pendingGame = new GameManager();
+
+        readonly static EndPoint localEndPoint = new IPEndPoint(IPAddress.Any, 65530);
+        readonly static Socket listenSocket = new Socket(localEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
         static void Main()
         {
-            var server = new TcpListener(ListenHost, Port);
-            server.Start();
-            Console.WriteLine($"Listening on {server.LocalEndpoint}");
+            // create the socket which listens for incoming connections
+            listenSocket.Bind(localEndPoint);
 
-            while (true)
-            {
-                TcpClient client = server.AcceptTcpClient();
-                Console.WriteLine($"New connection from {client.Client.RemoteEndPoint}");
-                PlacePlayer(new GamePlayer(client));
-            }
+            // start the server with a listen backlog of 100 connections
+            listenSocket.Listen(100);
+
+            StartAccept(null);
+
+            Console.WriteLine($"Listening to {localEndPoint}");
+
+            Console.WriteLine("Press any key to terminate the server process....");
+            Console.ReadKey();
         }
 
         public static void PlacePlayer(GamePlayer player)
@@ -48,6 +50,39 @@ namespace HexCoven
                 if (gameNowFull)
                     pendingGame = new GameManager();
             }
+        }
+
+        static void StartAccept(SocketAsyncEventArgs? acceptEventArg)
+        {
+            if (acceptEventArg == null)
+            {
+                acceptEventArg = new SocketAsyncEventArgs();
+                acceptEventArg.Completed += new EventHandler<SocketAsyncEventArgs>(AcceptEventArg_Completed);
+            }
+            else
+            {
+                // socket must be cleared since the context object is being reused
+                acceptEventArg.AcceptSocket = null;
+            }
+
+            bool willRaiseEvent = listenSocket.AcceptAsync(acceptEventArg);
+            if (!willRaiseEvent)
+            {
+                ProcessAccept(acceptEventArg);
+            }
+        }
+
+        static void AcceptEventArg_Completed(object? sender, SocketAsyncEventArgs e)
+        {
+            ProcessAccept(e);
+        }
+        static private void ProcessAccept(SocketAsyncEventArgs e)
+        {
+            Console.WriteLine($"New connection from {e.AcceptSocket.RemoteEndPoint}");
+            PlacePlayer(new GamePlayer(e.AcceptSocket));
+
+            // Accept the next connection request
+            StartAccept(e);
         }
     }
 }
