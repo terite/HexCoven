@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 
 namespace HexCoven
 {
@@ -18,8 +19,12 @@ namespace HexCoven
         readonly static EndPoint localEndPoint = new IPEndPoint(IPAddress.Any, 65530);
         readonly static Socket listenSocket = new Socket(localEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
+        static bool listening = true;
+
         static void Main()
         {
+            Console.CancelKeyPress += Console_CancelKeyPress;
+            Console.WriteLine("Press CTRL-C to exit");
             // create the socket which listens for incoming connections
             listenSocket.Bind(localEndPoint);
 
@@ -30,8 +35,27 @@ namespace HexCoven
 
             Console.WriteLine($"Listening to {localEndPoint}");
 
-            Console.WriteLine("Press any key to terminate the server process....");
-            Console.ReadKey();
+            while (listening)
+                Thread.Yield();
+
+            Console.WriteLine("No longer listening!");
+        }
+
+        private static void Console_CancelKeyPress(object sender, ConsoleCancelEventArgs e)
+        {
+            if (listening)
+            {
+                e.Cancel = true;
+                Console.WriteLine("Got CTRL-C");
+                listening = false;
+                listenSocket.Close();
+            }
+            else
+            {
+                e.Cancel = false;
+                Console.WriteLine("Got CTRL-C AGAIN");
+                Environment.Exit(1);
+            }
         }
 
         public static void PlacePlayer(GamePlayer player)
@@ -40,7 +64,6 @@ namespace HexCoven
             {
                 if (pendingGame.State != GameState.WaitingForPlayers)
                 {
-                    Console.Error.WriteLine($"pendingGame state was invalid! {pendingGame.State}");
                     pendingGame = new GameManager();
                 }
 
@@ -50,6 +73,8 @@ namespace HexCoven
                 if (gameNowFull)
                     pendingGame = new GameManager();
             }
+
+            player.Listen();
         }
 
         static void StartAccept(SocketAsyncEventArgs? acceptEventArg)
@@ -67,21 +92,25 @@ namespace HexCoven
 
             bool willRaiseEvent = listenSocket.AcceptAsync(acceptEventArg);
             if (!willRaiseEvent)
-            {
                 ProcessAccept(acceptEventArg);
-            }
         }
 
         static void AcceptEventArg_Completed(object? sender, SocketAsyncEventArgs e)
         {
             ProcessAccept(e);
         }
+
         static private void ProcessAccept(SocketAsyncEventArgs e)
         {
+            if (e.SocketError != SocketError.Success)
+            {
+                if (e.SocketError != SocketError.OperationAborted)
+                    Console.Error.WriteLine($"Error while trying to accept: {e.SocketError}");
+                return;
+            }
             Console.WriteLine($"New connection from {e.AcceptSocket.RemoteEndPoint}");
             PlacePlayer(new GamePlayer(e.AcceptSocket));
 
-            // Accept the next connection request
             StartAccept(e);
         }
     }

@@ -2,11 +2,14 @@
 {
     public static class Settings
     {
-        public const bool LogCloseCalls = false;
-        public const bool LogOutbound = false;
-        public const bool LogOutboundPing = false;
-        public const bool LogInbound = false;
-        public const bool LogInboundPing = false;
-        internal static double MatchingIntervalMs = 500;
+        internal static bool LogCloseCalls = true;
+        internal static bool LogOutbound = true;
+        internal static bool LogOutboundPing = true;
+        internal static bool LogInbound = true;
+        internal static bool LogInboundPing = true;
+
+        internal static double MatchingIntervalMs = 100;
+        internal static bool ShowClock = true;
+        internal static float TimerDuration = 0f;
     }
 }

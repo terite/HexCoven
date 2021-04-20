@@ -17,22 +17,24 @@ namespace HexCoven
             Encoding.UTF8.GetBytes("Matching ( ●  )"),
         };
 
-        int gameId;
-
         GamePlayer? player1;
         GamePlayer? player2;
 
-        float TimerDuration = 0f;
-        bool ShowClock = false;
+        readonly int gameId;
+        readonly float TimerDuration = Settings.TimerDuration;
+        readonly bool ShowClock = Settings.ShowClock;
 
         public GameState State { get; private set; } = GameState.WaitingForPlayers;
 
         public GameManager()
         {
             gameId = ++lastGameId;
-            var tickTimer = new System.Timers.Timer(Settings.MatchingIntervalMs);
-            tickTimer.Elapsed += TickTimer_Elapsed;
-            tickTimer.Start();
+            if (Settings.MatchingIntervalMs > 0)
+            {
+                var tickTimer = new System.Timers.Timer(Settings.MatchingIntervalMs);
+                tickTimer.Elapsed += TickTimer_Elapsed;
+                tickTimer.Start();
+            }
         }
 
         int pendingNameIndex = 0;
@@ -64,19 +66,15 @@ namespace HexCoven
             if (State != GameState.WaitingForPlayers)
                 throw new Exception($"Cannot add player to game whose state is {State}");
 
-            bool addedPlayer = false;
             if (player1 == null)
             {
-                player1 = SetupPlayer(player, player2);
-                addedPlayer = true;
+                player1 = SetupPlayer(player);
             }
             else if (player2 == null)
             {
-                player2 = SetupPlayer(player, player1);
-                addedPlayer = true;
+                player2 = SetupPlayer(player);
             }
-
-            if (!addedPlayer)
+            else
             {
                 player.Close("Game full");
                 throw new Exception("Game is full");
@@ -85,26 +83,34 @@ namespace HexCoven
             return player1 != null && player2 != null;
         }
 
-        GamePlayer SetupPlayer(GamePlayer player, GamePlayer? otherPlayer)
+        GamePlayer SetupPlayer(GamePlayer player)
         {
             player.OnMessage += Player_OnMessage;
+            player.OnInitialized += Player_OnInitialized;
             player.OnDisconnect += Player_OnDisconnect;
+
+            return player;
+        }
+
+        private void Player_OnInitialized(GamePlayer player)
+        {
+            var otherPlayer = GetOtherPlayer(player);
+            player.Send(new Message(MessageType.Connect, Encoding.UTF8.GetBytes(otherPlayer?.PlayerName ?? "")));
 
             if (otherPlayer != null)
             {
                 if (otherPlayer.Team == player.Team)
                     player.SwapTeam();
 
-                player.Send(new Message(MessageType.UpdateName, Encoding.UTF8.GetBytes(otherPlayer.PlayerName)));
                 otherPlayer.Send(new Message(MessageType.UpdateName, Encoding.UTF8.GetBytes(player.PlayerName)));
             }
 
-            return player;
         }
 
         private void Player_OnDisconnect(GamePlayer sender)
         {
             sender.OnMessage -= Player_OnMessage;
+            sender.OnInitialized -= Player_OnInitialized;
             sender.OnDisconnect -= Player_OnDisconnect;
 
             GamePlayer? otherPlayer = null;
@@ -183,8 +189,7 @@ namespace HexCoven
                 case MessageType.PreviewMovesOn:
                 case MessageType.PreviewMovesOff:
                 case MessageType.UpdateName:
-                    if (otherPlayer != null)
-                        otherPlayer.Send(message);
+                    ForwardMessage(in message, otherPlayer);
                     break;
 
                 // Forward or warn
@@ -192,28 +197,17 @@ namespace HexCoven
                 case MessageType.BoardState:
                 case MessageType.OfferDraw:
                 case MessageType.DenyDraw:
-                    if (otherPlayer != null)
-                        otherPlayer.Send(in message);
-                    else
-                        Console.Error.WriteLine($"Cannot forward message, no other player! {message.ToString()}");
+                    ForwardMessage(in message, otherPlayer, warnIfMissing: true);
                     break;
 
                 case MessageType.AcceptDraw:
                 case MessageType.FlagFall:
                     State = GameState.Complete;
-                    if (otherPlayer != null)
-                        otherPlayer.Send(in message);
-                    else
-                        Console.Error.WriteLine($"Cannot forward message, no other player! {message.ToString()}");
+                    ForwardMessage(in message, otherPlayer, warnIfMissing: true);
                     break;
 
                 // Need to be handled
                 case MessageType.Ping:
-                    if (sender.NeedsConnect)
-                    {
-                        sender.Send(new Message(MessageType.Connect, Encoding.UTF8.GetBytes(otherPlayer?.PlayerName ?? "")));
-                        sender.NeedsConnect = false;
-                    }
                     if (otherPlayer != null)
                         otherPlayer.Send(in message);
                     else
@@ -245,16 +239,24 @@ namespace HexCoven
                     break;
 
                 // Should never receive
+                case MessageType.Connect:
                 case MessageType.StartMatch:
                     Console.Error.WriteLine($"Received unexpected message {message.ToString()}");
                     break;
 
                 default:
                     Console.Error.WriteLine($"Forwarding unknown message {message.ToString()}");
-                    if (otherPlayer != null)
-                        otherPlayer.Send(in message);
+                    ForwardMessage(in message, otherPlayer);
                     break;
             }
+        }
+
+        void ForwardMessage(in Message message, GamePlayer? recipient, bool warnIfMissing = false)
+        {
+            if (recipient != null)
+                recipient.Send(in message);
+            else if (warnIfMissing)
+                Console.Error.WriteLine($"Cannot forward message, no other player! {message.ToString()}");
         }
 
         private void HandleSurrender(GamePlayer sender, in Message message, GamePlayer? otherPlayer)
@@ -293,6 +295,7 @@ namespace HexCoven
                 State = GameState.Playing;
                 p1.Send(new Message(MessageType.StartMatch, new GameParams(p1.Team, p1.PreviewMovesOn, TimerDuration, ShowClock).Serialize()));
                 p2.Send(new Message(MessageType.StartMatch, new GameParams(p2.Team, p2.PreviewMovesOn, TimerDuration, ShowClock).Serialize()));
+                Console.WriteLine($"Starting game {this}");
             }
         }
 
@@ -315,7 +318,20 @@ namespace HexCoven
 
         public override string ToString()
         {
-            return $"GameManager(id={gameId})";
+            return $"GameManager(id={gameId}, p1={player1}, p2={player2})";
+        }
+
+        private GamePlayer? GetOtherPlayer(GamePlayer player)
+        {
+            if (player == player1)
+                return player2;
+            else if (player == player2)
+                return player1;
+            else
+            {
+                Console.Error.WriteLine($"Given player {player} was not in game {this}");
+                return null;
+            }
         }
     }
 }

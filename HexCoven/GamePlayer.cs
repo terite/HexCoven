@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Net.Sockets;
 using System.Text;
 using System.Timers;
@@ -9,6 +10,7 @@ namespace HexCoven
     {
         public delegate void MessageEvent(GamePlayer sender, in Message message);
         public event MessageEvent? OnMessage;
+        public event Action<GamePlayer>? OnInitialized;
         public event Action<GamePlayer>? OnDisconnect;
 
         readonly Socket Socket;
@@ -26,7 +28,7 @@ namespace HexCoven
         public bool SentSurrender { get; set; }
         public bool SentDisconnect { get; set; }
 
-        public bool NeedsConnect { get; set; } = true;
+        public bool IsInitialized { get; private set; } = false;
 
         public GamePlayer(Socket socket)
         {
@@ -36,7 +38,6 @@ namespace HexCoven
             this.ReadArg = readArg;
 
             Socket = socket;
-            BeginReceive();
 
             var timer = new Timer(1000);
             timer.Elapsed += Timer_Elapsed;
@@ -44,38 +45,51 @@ namespace HexCoven
             timer.Start();
         }
 
+        bool listening = false;
+        public void Listen()
+        {
+            if (!listening)
+            {
+                listening = true;
+                BeginReceive();
+            }
+
+        }
+
         private void Timer_Elapsed(object sender, ElapsedEventArgs e)
         {
-            if (NeedsConnect)
+            if (!IsInitialized)
             {
-                Send(new Message(MessageType.Connect, ReadOnlySpan<byte>.Empty));
-                NeedsConnect = false;
+                OnInitialized?.Invoke(this);
+                IsInitialized = true;
+                Console.WriteLine($"{this} initialized due to timer");
             }
         }
 
         void BeginReceive()
         {
-            if (closedReason == null)
+            while (true)
+            {
+                if (closedReason != null) break;
                 if (!Socket.ReceiveAsync(ReadArg))
-                    ProcessReceive(ReadArg);
+                    ProcessReceive(ReadArg, false);
+                else
+                    break;
+            }
         }
 
         void IO_Completed(object? sender, SocketAsyncEventArgs e)
         {
-            // determine which type of operation just completed and call the associated handler
             switch (e.LastOperation)
             {
                 case SocketAsyncOperation.Receive:
-                    ProcessReceive(e);
-                    break;
-                case SocketAsyncOperation.Send:
-                    ProcessSend(e);
+                    ProcessReceive(e, true);
                     break;
                 default:
-                    throw new ArgumentException("The last operation completed on the socket was not a receive or send");
+                    throw new ArgumentException($"Unhandled async socket operation: {e.LastOperation}");
             }
         }
-        private void ProcessReceive(SocketAsyncEventArgs e)
+        private void ProcessReceive(SocketAsyncEventArgs e, bool receiveAgain)
         {
             // check if the remote host closed the connection
             if (e.BytesTransferred == 0) {
@@ -98,22 +112,9 @@ namespace HexCoven
                 Close($"Error processing data: {ex.Message}");
                 return;
             }
-            BeginReceive();
-        }
 
-        private void ProcessSend(SocketAsyncEventArgs e)
-        {
-            if (e.SocketError == SocketError.Success)
-            {
-                // read the next block of data send from the client
-                bool willRaiseEvent = Socket.ReceiveAsync(e);
-                if (!willRaiseEvent)
-                    ProcessReceive(e);
-            }
-            else
-            {
-                CloseClientSocket(e);
-            }
+            if (receiveAgain)
+                BeginReceive();
         }
 
         internal void SwapTeam()
@@ -169,6 +170,14 @@ namespace HexCoven
                     Team = Team == ChessTeam.White ? ChessTeam.Black : ChessTeam.White;
                     break;
 
+                case MessageType.Ping:
+                    if (!IsInitialized)
+                    {
+                        IsInitialized = true;
+                        OnInitialized?.Invoke(this);
+                        Console.WriteLine($"{this} initialized due to ping");
+                    }
+                    break;
                 case MessageType.Ready:
                     IsReady = true;
                     break;
@@ -201,13 +210,23 @@ namespace HexCoven
         {
             if (closedReason == null)
             {
+                if (Settings.LogOutbound)
+                    if (Settings.LogOutboundPing || (message.Type != MessageType.Ping && message.Type != MessageType.Pong))
+                        Console.WriteLine($"-> {Socket.RemoteEndPoint} -- {message.ToString()}");
+
+                byte[] writeBuffer = ArrayPool<byte>.Shared.Rent(message.TotalLength);
+                var writeSpan = new Span<byte>(writeBuffer, 0, message.TotalLength);
                 try
                 {
-                    message.WriteTo(Socket);
+                    message.WriteTo(writeSpan);
+                    Socket.Send(writeSpan);
                 } catch (Exception ex)
                 {
                     Console.Error.WriteLine($"Error while sending to {this}: {ex}");
                     Close("Error calling WriteTo");
+                } finally
+                {
+                    ArrayPool<byte>.Shared.Return(writeBuffer);
                 }
 
             }
@@ -220,7 +239,7 @@ namespace HexCoven
             if (Settings.LogCloseCalls)
                 Console.WriteLine($"GamePlayer.Close() call: {reason}");
 
-            CloseClientSocket(ReadArg);
+            CloseClientSocket();
 
             if (closedReason == null)
             {
@@ -229,7 +248,7 @@ namespace HexCoven
             }
         }
 
-        private void CloseClientSocket(SocketAsyncEventArgs e)
+        private void CloseClientSocket()
         {
             // close the socket associated with the client
             try

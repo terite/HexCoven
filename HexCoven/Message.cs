@@ -60,17 +60,16 @@ namespace HexCoven
             return TryReadResult.Success;
         }
 
-        public void WriteTo (Socket socket)
+        public void WriteTo (Span<byte> target)
         {
-            if (Settings.LogOutbound)
-                if (Settings.LogOutboundPing || (Type != MessageType.Ping && Type != MessageType.Pong))
-                    Console.WriteLine($"-> {socket.RemoteEndPoint} -- {this.ToString()}");
+            Signature.CopyTo(target);
+            if (!BitConverter.TryWriteBytes(target.Slice(Signature.Length), (ushort)Payload.Length))
+                throw new InvalidOperationException("Failed to write signature bytes");
 
-            socket.Send(Signature);
-            socket.Send(BitConverter.GetBytes((ushort)Payload.Length));
-            socket.Send(new byte[] { (byte)this.Type });
+            target[Signature.Length + sizeof(ushort)] = (byte)Type;
+
             if (Payload.Length > 0)
-                socket.Send(Payload);
+                Payload.CopyTo(target.Slice(Signature.Length + sizeof(ushort) + sizeof(byte)));
         }
 
         public override string ToString()
