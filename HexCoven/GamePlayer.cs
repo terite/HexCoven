@@ -8,6 +8,8 @@ namespace HexCoven
 {
     public class GamePlayer
     {
+        static int lastPlayerId = 0;
+        int playerId;
         public delegate void MessageEvent(GamePlayer sender, in Message message);
         public event MessageEvent? OnMessage;
         public event Action<GamePlayer>? OnInitialized;
@@ -20,7 +22,7 @@ namespace HexCoven
         byte[] ReceiveBuffer = new byte[ushort.MaxValue];
         ushort ReceiveBufferLen = 0;
 
-        public string PlayerName { get; private set; } = "Unknown player";
+        public string PlayerName { get; private set; }
         public ChessTeam Team { get; set; } = ChessTeam.Black;
         public bool IsReady { get; set; }
         public bool PreviewMovesOn { get; set; }
@@ -32,6 +34,8 @@ namespace HexCoven
 
         public GamePlayer(Socket socket)
         {
+            playerId = ++lastPlayerId;
+            PlayerName = $"Opponent";
             var readArg = new SocketAsyncEventArgs();
             readArg.Completed += IO_Completed;
             readArg.SetBuffer(new byte[10 * 1024]);

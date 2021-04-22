@@ -30,6 +30,11 @@ namespace HexCoven
             Type = type;
             Payload = payload;
         }
+        public Message(MessageType type, string payload)
+        {
+            Type = type;
+            Payload = System.Text.Encoding.UTF8.GetBytes(payload);
+        }
 
         public static TryReadResult TryRead(ReadOnlySpan<byte> data, out Message message)
         {
