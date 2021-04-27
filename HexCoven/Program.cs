@@ -73,8 +73,6 @@ namespace HexCoven
                 if (gameNowFull)
                     pendingGame = new GameManager();
             }
-
-            player.Listen();
         }
 
         static void StartAccept(SocketAsyncEventArgs? acceptEventArg)
@@ -97,7 +95,15 @@ namespace HexCoven
 
         static void AcceptEventArg_Completed(object? sender, SocketAsyncEventArgs e)
         {
-            ProcessAccept(e);
+            switch (e.LastOperation)
+            {
+                case SocketAsyncOperation.Accept:
+                    ProcessAccept(e);
+                    break;
+                default:
+                    Console.Error.WriteLine($"Unexpected socket operation: {e.LastOperation}");
+                    break;
+            }
         }
 
         static private void ProcessAccept(SocketAsyncEventArgs e)
@@ -108,10 +114,25 @@ namespace HexCoven
                     Console.Error.WriteLine($"Error while trying to accept: {e.SocketError}");
                 return;
             }
-            Console.WriteLine($"New connection from {e.AcceptSocket.RemoteEndPoint}");
-            PlacePlayer(new GamePlayer(e.AcceptSocket));
+            Console.WriteLine($"New connection from {e.AcceptSocket!.RemoteEndPoint}");
+
+            var player = new GamePlayer(e.AcceptSocket);
+            player.OnInitialized += Player_OnInitialized;
+            player.OnDisconnect += Player_OnDisconnect;
+            player.Listen();
 
             StartAccept(e);
         }
+
+        private static void Player_OnInitialized(GamePlayer player)
+        {
+            PlacePlayer(player);
+        }
+        private static void Player_OnDisconnect(GamePlayer player)
+        {
+            player.OnInitialized -= Player_OnInitialized;
+            player.OnDisconnect -= Player_OnDisconnect;
+        }
+
     }
 }

@@ -36,19 +36,18 @@ namespace HexCoven
             Payload = System.Text.Encoding.UTF8.GetBytes(payload);
         }
 
-        public static TryReadResult TryRead(ReadOnlySpan<byte> data, out Message message)
+        public static bool TryRead(ReadOnlySpan<byte> data, out Message message)
         {
             if (data.Length < HeaderLength)
             {
                 message = default;
-                return TryReadResult.TooShort;
+                return false;
             }
             for (int i = 0; i < Signature.Length; i++)
             {
                 if (data[i] != i + 1)
                 {
-                    message = default;
-                    return TryReadResult.InvalidSignature;
+                    throw new ArgumentException("Invalid message signature");
                 }
              }
 
@@ -56,13 +55,13 @@ namespace HexCoven
             if (data.Length < (HeaderLength + payloadLength))
             {
                 message = default;
-                return TryReadResult.TooShort;
+                return false;
             }
 
             byte type = data[Signature.Length + 2];
             ReadOnlySpan<byte> payload = payloadLength > 0 ? data.Slice(HeaderLength, payloadLength) : ReadOnlySpan<byte>.Empty;
             message = new Message((MessageType)type, payload);
-            return TryReadResult.Success;
+            return true;
         }
 
         public void WriteTo (Span<byte> target)

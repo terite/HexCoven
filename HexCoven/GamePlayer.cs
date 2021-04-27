@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Buffers;
 using System.Net.Sockets;
 using System.Text;
@@ -19,8 +20,10 @@ namespace HexCoven
         readonly SocketAsyncEventArgs ReadArg; 
         string? closedReason = null;
 
-        byte[] ReceiveBuffer = new byte[ushort.MaxValue];
-        ushort ReceiveBufferLen = 0;
+        byte[] receiveBuffer = new byte[ushort.MaxValue];
+        ushort receiveBufferLen = 0;
+
+        Timer? initializeTimer;
 
         public string PlayerName { get; private set; }
         public ChessTeam Team { get; set; } = ChessTeam.Black;
@@ -29,6 +32,7 @@ namespace HexCoven
 
         public bool SentSurrender { get; set; }
         public bool SentDisconnect { get; set; }
+        public bool ReceivedConnect { get; set; }
 
         public bool IsInitialized { get; private set; } = false;
 
@@ -43,10 +47,10 @@ namespace HexCoven
 
             Socket = socket;
 
-            var timer = new Timer(1000);
-            timer.Elapsed += Timer_Elapsed;
-            timer.AutoReset = false;
-            timer.Start();
+            initializeTimer = new Timer(1000);
+            initializeTimer.Elapsed += InitializeTimer_Elapsed;
+            initializeTimer.AutoReset = false;
+            initializeTimer.Start();
         }
 
         bool listening = false;
@@ -57,16 +61,15 @@ namespace HexCoven
                 listening = true;
                 BeginReceive();
             }
-
         }
 
-        private void Timer_Elapsed(object sender, ElapsedEventArgs e)
+        private void InitializeTimer_Elapsed(object sender, ElapsedEventArgs e)
         {
+            initializeTimer?.Dispose();
+            initializeTimer = null;
             if (!IsInitialized)
             {
-                OnInitialized?.Invoke(this);
-                IsInitialized = true;
-                Console.WriteLine($"{this} initialized due to timer");
+                Close("Failed to initialize");
             }
         }
 
@@ -129,40 +132,27 @@ namespace HexCoven
 
         void ReceiveBytes(in ReadOnlyMemory<byte> received)
         {
-            received.CopyTo(new Memory<byte>(ReceiveBuffer, ReceiveBufferLen, ReceiveBuffer.Length - ReceiveBufferLen));
-            ReceiveBufferLen += (ushort)received.Length;
+            received.CopyTo(new Memory<byte>(receiveBuffer, receiveBufferLen, receiveBuffer.Length - receiveBufferLen));
+            receiveBufferLen += (ushort)received.Length;
 
             ushort unhandledIndex = 0;
 
-            while (unhandledIndex < ReceiveBufferLen)
+            while (unhandledIndex < receiveBufferLen)
             {
-                var result = Message.TryRead(new ReadOnlySpan<byte>(ReceiveBuffer, unhandledIndex, ReceiveBufferLen), out Message message);
-
-                if (result == Message.TryReadResult.TooShort)
+                var result = Message.TryRead(new ReadOnlySpan<byte>(receiveBuffer, unhandledIndex, receiveBufferLen), out Message message);
+                if (!result)
                     break;
-
-                if (result == Message.TryReadResult.InvalidSignature)
-                {
-                    Close("Because of invalid signature");
-                    throw new Exception("Invalid signature!");
-                }
-
-                if (result != Message.TryReadResult.Success)
-                {
-                    Close("Odd result");
-                    throw new Exception($"wtf tryreadresult: {result}");
-                }
 
                 HandleReceiveMessage(in message);
                 unhandledIndex += message.TotalLength;
             }
 
-            ReceiveBufferLen -= unhandledIndex;
+            receiveBufferLen -= unhandledIndex;
 
             // Move remaining bytes to the beginning of the buffer
-            if (ReceiveBufferLen > 0)
+            if (receiveBufferLen > 0)
             {
-                Array.Copy(ReceiveBuffer, unhandledIndex, ReceiveBuffer, 0, ReceiveBufferLen);
+                Array.Copy(receiveBuffer, unhandledIndex, receiveBuffer, 0, receiveBufferLen);
             }
         }
 
@@ -179,7 +169,6 @@ namespace HexCoven
                     {
                         IsInitialized = true;
                         OnInitialized?.Invoke(this);
-                        Console.WriteLine($"{this} initialized due to ping");
                     }
                     break;
                 case MessageType.Ready:
@@ -212,36 +201,71 @@ namespace HexCoven
 
         public void Send(in Message message)
         {
-            if (closedReason == null)
+            if (closedReason != null)
             {
-                if (Settings.LogOutbound)
-                    if (Settings.LogOutboundPing || (message.Type != MessageType.Ping && message.Type != MessageType.Pong))
-                        Console.WriteLine($"-> {Socket.RemoteEndPoint} -- {message.ToString()}");
-
-                byte[] writeBuffer = ArrayPool<byte>.Shared.Rent(message.TotalLength);
-                var writeSpan = new Span<byte>(writeBuffer, 0, message.TotalLength);
-                try
-                {
-                    message.WriteTo(writeSpan);
-                    Socket.Send(writeSpan);
-                } catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"Error while sending to {this}: {ex}");
-                    Close("Error calling WriteTo");
-                } finally
-                {
-                    ArrayPool<byte>.Shared.Return(writeBuffer);
-                }
-
-            }
-            else
                 Console.Error.WriteLine($"Ignoring write to disconnected client");
+                return;
+            }
+
+            bool shouldLog = message.Type switch
+            {
+                MessageType.Ping => Settings.LogOutboundPing,
+                MessageType.Pong => Settings.LogOutboundPing,
+                MessageType.UpdateName => Settings.LogNameUpdates,
+                _ => Settings.LogOutbound,
+            };
+            if (shouldLog)
+                Console.WriteLine($"-> {Socket.RemoteEndPoint} -- {message.ToString()}");
+
+            byte[] writeBuffer = ArrayPool<byte>.Shared.Rent(message.TotalLength);
+            var writeSpan = new Span<byte>(writeBuffer, 0, message.TotalLength);
+            try
+            {
+                message.WriteTo(writeSpan);
+                Socket.Send(writeSpan);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Error while sending to {this}: {ex}");
+                Close("Error calling WriteTo");
+                return;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(writeBuffer);
+            }
+
+            switch (message.Type)
+            {
+                case MessageType.Connect:
+                    ReceivedConnect = true;
+                    break;
+            }
+        }
+
+        public void SetOtherName(byte[] otherPlayerName)
+        {
+            if (!ReceivedConnect)
+                Send(new Message(MessageType.Connect, otherPlayerName));
+            else
+                Send(new Message(MessageType.UpdateName, otherPlayerName));
+        }
+
+        public void SetOtherName(string otherPlayerName)
+        {
+            SetOtherName(Encoding.UTF8.GetBytes(otherPlayerName));
         }
 
         public void Close(string reason)
         {
             if (Settings.LogCloseCalls)
                 Console.WriteLine($"GamePlayer.Close() call: {reason}");
+
+            if (initializeTimer != null)
+            {
+                initializeTimer.Dispose();
+                initializeTimer = null;
+            }
 
             CloseClientSocket();
 

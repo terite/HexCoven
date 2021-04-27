@@ -38,6 +38,8 @@ namespace HexCoven
         }
 
         int pendingNameIndex = 0;
+        byte[] PendingName => PendingNames[pendingNameIndex];
+
         private void TickTimer_Elapsed(object sender, System.Timers.ElapsedEventArgs e)
         {
             if (State != GameState.WaitingForPlayers) return;
@@ -46,14 +48,13 @@ namespace HexCoven
 
             if (p1 != null && p2 != null) return;
 
-            var pendingName = PendingNames[pendingNameIndex++];
-            pendingNameIndex %= PendingNames.Length; ;
+            pendingNameIndex = (++pendingNameIndex) % PendingNames.Length;
 
             if (p1 != null)
-                p1.Send(new Message(MessageType.UpdateName, pendingName));
+                p1.Send(new Message(MessageType.UpdateName, PendingName));
 
             if (p2 != null)
-                p2.Send(new Message(MessageType.UpdateName, pendingName));
+                p2.Send(new Message(MessageType.UpdateName, PendingName));
         }
 
         /// <summary>
@@ -66,13 +67,16 @@ namespace HexCoven
             if (State != GameState.WaitingForPlayers)
                 throw new Exception($"Cannot add player to game whose state is {State}");
 
+            if (!player.IsInitialized)
+                throw new ArgumentException("player must already be initialized");
+
             if (player1 == null)
             {
-                player1 = SetupPlayer(player);
+                player1 = player;
             }
             else if (player2 == null)
             {
-                player2 = SetupPlayer(player);
+                player2 = player;
             }
             else
             {
@@ -80,37 +84,42 @@ namespace HexCoven
                 throw new Exception("Game is full");
             }
 
+            SetupPlayer(player);
+
             return player1 != null && player2 != null;
         }
 
-        GamePlayer SetupPlayer(GamePlayer player)
+        private void SetupPlayer(GamePlayer player)
         {
             player.OnMessage += Player_OnMessage;
-            player.OnInitialized += Player_OnInitialized;
             player.OnDisconnect += Player_OnDisconnect;
 
-            return player;
-        }
-
-        private void Player_OnInitialized(GamePlayer player)
-        {
             var otherPlayer = GetOtherPlayer(player);
-            player.Send(new Message(MessageType.Connect, Encoding.UTF8.GetBytes(otherPlayer?.PlayerName ?? "")));
-
             if (otherPlayer != null)
             {
+                player.SetOtherName(NiceName(otherPlayer));
                 if (otherPlayer.Team == player.Team)
                     player.SwapTeam();
 
-                otherPlayer.Send(new Message(MessageType.UpdateName, Encoding.UTF8.GetBytes(player.PlayerName)));
+                otherPlayer.SetOtherName(NiceName(player));
             }
+            else
+            {
+                player.SetOtherName(PendingName);
+            }
+        }
 
+        string NiceName(GamePlayer player)
+        {
+            if (State == GameState.WaitingForPlayers)
+                return player.IsReady ? $"{player.PlayerName} (+)" : $"{player.PlayerName} (-)";
+            else
+                return player.PlayerName;
         }
 
         private void Player_OnDisconnect(GamePlayer sender)
         {
             sender.OnMessage -= Player_OnMessage;
-            sender.OnInitialized -= Player_OnInitialized;
             sender.OnDisconnect -= Player_OnDisconnect;
 
             GamePlayer? otherPlayer = null;
@@ -175,9 +184,15 @@ namespace HexCoven
                 return;
             }
 
-            if (Settings.LogInbound)
-                if (Settings.LogInboundPing || (message.Type != MessageType.Ping && message.Type != MessageType.Pong))
-                    Console.WriteLine($"<- {prefix} -- {message.ToString()}");
+            bool shouldLog = message.Type switch
+            {
+                MessageType.Ping => Settings.LogInboundPing,
+                MessageType.Pong => Settings.LogInboundPing,
+                MessageType.UpdateName => Settings.LogNameUpdates,
+                _ => Settings.LogInbound,
+            };
+            if (shouldLog)
+                Console.WriteLine($"<- {prefix} -- {message.ToString()}");
 
             switch (message.Type)
             {
@@ -188,9 +203,6 @@ namespace HexCoven
                 case MessageType.DenyTeamChange:
                 case MessageType.PreviewMovesOn:
                 case MessageType.PreviewMovesOff:
-                case MessageType.UpdateName:
-                    ForwardMessage(in message, otherPlayer);
-                    break;
 
                 // Forward or warn
                 case MessageType.Promotion:
@@ -206,12 +218,14 @@ namespace HexCoven
                     ForwardMessage(in message, otherPlayer, warnIfMissing: true);
                     break;
 
-                // Need to be handled
+                // Messages that need to be handled
                 case MessageType.Ping:
+                    sender.Send(new Message(MessageType.Pong));
+                    break;
+
+                case MessageType.UpdateName:
                     if (otherPlayer != null)
-                        otherPlayer.Send(in message);
-                    else
-                        sender.Send(new Message(MessageType.Pong));
+                        otherPlayer.SetOtherName(NiceName(sender));
                     break;
 
                 case MessageType.Disconnect:
@@ -288,14 +302,24 @@ namespace HexCoven
 
         private void Player_OnReadyChange()
         {
-            if (player1?.IsReady == true && player2?.IsReady == true)
+            var p1 = player1;
+            var p2 = player2;
+            if (p1 == null || p2 == null)
+                return;
+
+            if (p1.IsReady && p2.IsReady)
             {
-                var p1 = player1!;
-                var p2 = player2!;
                 State = GameState.Playing;
+                p1.SetOtherName(NiceName(p2));
+                p2.SetOtherName(NiceName(p1));
                 p1.Send(new Message(MessageType.StartMatch, new GameParams(p1.Team, p1.PreviewMovesOn, TimerDuration, ShowClock).Serialize()));
                 p2.Send(new Message(MessageType.StartMatch, new GameParams(p2.Team, p2.PreviewMovesOn, TimerDuration, ShowClock).Serialize()));
                 Console.WriteLine($"Starting game {this}");
+            }
+            else
+            {
+                p1.SetOtherName(NiceName(p2));
+                p2.SetOtherName(NiceName(p1));
             }
         }
 
