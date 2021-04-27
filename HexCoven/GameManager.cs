@@ -214,6 +214,8 @@ namespace HexCoven
 
                 case MessageType.AcceptDraw:
                 case MessageType.FlagFall:
+                case MessageType.Checkmate:
+                case MessageType.Stalemate:
                     State = GameState.Complete;
                     ForwardMessage(in message, otherPlayer, warnIfMissing: true);
                     break;
