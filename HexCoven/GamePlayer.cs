@@ -126,7 +126,7 @@ namespace HexCoven
 
         internal void SwapTeam()
         {
-            Send(new Message(MessageType.ApproveTeamChange));
+            Send(Message.ApproveTeamChange());
             Team = Team == ChessTeam.Black ? ChessTeam.White : ChessTeam.Black;
         }
 
@@ -246,9 +246,9 @@ namespace HexCoven
         public void SetOtherName(byte[] otherPlayerName)
         {
             if (!ReceivedConnect)
-                Send(new Message(MessageType.Connect, otherPlayerName));
+                Send(Message.Connect(otherPlayerName));
             else
-                Send(new Message(MessageType.UpdateName, otherPlayerName));
+                Send(Message.UpdateName(otherPlayerName));
         }
 
         public void SetOtherName(string otherPlayerName)

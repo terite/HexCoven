@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Net.Sockets;
 using System.Text;
+using System.Threading;
 
 namespace HexCoven
 {
@@ -24,7 +25,32 @@ namespace HexCoven
         readonly float TimerDuration = Settings.TimerDuration;
         readonly bool ShowClock = Settings.ShowClock;
 
-        public GameState State { get; private set; } = GameState.WaitingForPlayers;
+        private GameState _state = GameState.WaitingForPlayers;
+        public GameState State {
+            get => _state;
+            set
+            {
+                if (_state != value)
+                {
+                    switch ((_state, value))
+                    {
+                        case (GameState.WaitingForPlayers, GameState.Playing):
+                            Interlocked.Increment(ref Program.NumActiveGames);
+                            break;
+                        case (GameState.Playing, GameState.Complete):
+                            Interlocked.Decrement(ref Program.NumActiveGames);
+                            break;
+                        case (GameState.WaitingForPlayers, GameState.Complete):
+                            // Players left a lobby without starting the game
+                            break;
+                        default:
+                            throw new ArgumentException($"Invalid state transition: {_state} to {value}");
+                    }
+                    Console.WriteLine($"Game {gameId} changing from {_state} to {value}, now at {Program.NumActiveGames} active games");
+                    _state = value;
+                }
+            }
+        }
 
         public GameManager()
         {
@@ -51,10 +77,10 @@ namespace HexCoven
             pendingNameIndex = (++pendingNameIndex) % PendingNames.Length;
 
             if (p1 != null)
-                p1.Send(new Message(MessageType.UpdateName, PendingName));
+                p1.Send(Message.UpdateName(PendingName));
 
             if (p2 != null)
-                p2.Send(new Message(MessageType.UpdateName, PendingName));
+                p2.Send(Message.UpdateName(PendingName));
         }
 
         /// <summary>
@@ -150,7 +176,7 @@ namespace HexCoven
                     {
                         Console.WriteLine($"Sending missing surrender message!");
                         sender.SentSurrender = true;
-                        otherPlayer.Send(new Message(MessageType.Surrender));
+                        otherPlayer.Send(Message.Surrender(0));
                     }
                     State = GameState.Complete;
                     break;
@@ -222,7 +248,7 @@ namespace HexCoven
 
                 // Messages that need to be handled
                 case MessageType.Ping:
-                    sender.Send(new Message(MessageType.Pong));
+                    sender.Send(Message.Pong());
                     break;
 
                 case MessageType.UpdateName:
@@ -314,8 +340,8 @@ namespace HexCoven
                 State = GameState.Playing;
                 p1.SetOtherName(NiceName(p2));
                 p2.SetOtherName(NiceName(p1));
-                p1.Send(new Message(MessageType.StartMatch, new GameParams(p1.Team, p1.PreviewMovesOn, TimerDuration, ShowClock).Serialize()));
-                p2.Send(new Message(MessageType.StartMatch, new GameParams(p2.Team, p2.PreviewMovesOn, TimerDuration, ShowClock).Serialize()));
+                p1.Send(Message.StartMatch(new GameParams(p1.Team, p1.PreviewMovesOn, TimerDuration, ShowClock)));
+                p2.Send(Message.StartMatch(new GameParams(p2.Team, p2.PreviewMovesOn, TimerDuration, ShowClock)));
                 Console.WriteLine($"Starting game {this}");
             }
             else

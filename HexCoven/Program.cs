@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading;
@@ -20,6 +21,11 @@ namespace HexCoven
         readonly static Socket listenSocket = new Socket(localEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
 
         static bool listening = true;
+
+        public static int NumConnectedPlayers = 0;
+        public static int NumActiveGames = 0;
+
+        static DateTime lastExitCheck = default;
 
         static void Main()
         {
@@ -46,7 +52,20 @@ namespace HexCoven
             if (listening)
             {
                 e.Cancel = true;
-                Console.WriteLine("Got CTRL-C");
+
+                if ((DateTime.UtcNow - lastExitCheck).TotalSeconds < 5)
+                {
+                    // 2nd CTRL-C within 5 seconds, close anyway
+                }
+                else if (NumConnectedPlayers > 0)
+                {
+                    Console.WriteLine($"There are still {NumConnectedPlayers} connected players");
+                    Console.WriteLine("Press CTRL-C again to quit the server");
+                    lastExitCheck = DateTime.UtcNow;
+                    return;
+                }
+
+                Console.WriteLine($"Exiting with {NumConnectedPlayers} player(s) still connected");
                 listening = false;
                 listenSocket.Close();
             }
@@ -126,10 +145,14 @@ namespace HexCoven
 
         private static void Player_OnInitialized(GamePlayer player)
         {
+            Interlocked.Increment(ref NumConnectedPlayers);
+            Console.WriteLine($"We now have {NumConnectedPlayers} connected players");
             PlacePlayer(player);
         }
         private static void Player_OnDisconnect(GamePlayer player)
         {
+            Interlocked.Decrement(ref NumConnectedPlayers);
+            Console.WriteLine($"We now have {NumConnectedPlayers} connected players");
             player.OnInitialized -= Player_OnInitialized;
             player.OnDisconnect -= Player_OnDisconnect;
         }

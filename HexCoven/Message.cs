@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Net.Sockets;
+using System.Text;
 
 namespace HexCoven
 {
@@ -19,18 +20,18 @@ namespace HexCoven
 
         public readonly ushort TotalLength { get => (ushort)(HeaderLength + Payload.Length); }
 
-        public Message(MessageType type)
+        private Message(MessageType type)
         {
             Type = type;
             Payload = ReadOnlySpan<byte>.Empty;
         }
 
-        public Message(MessageType type, ReadOnlySpan<byte> payload)
+        private Message(MessageType type, ReadOnlySpan<byte> payload)
         {
             Type = type;
             Payload = payload;
         }
-        public Message(MessageType type, string payload)
+        private Message(MessageType type, string payload)
         {
             Type = type;
             Payload = System.Text.Encoding.UTF8.GetBytes(payload);
@@ -95,5 +96,42 @@ namespace HexCoven
 
             return $"Message(type={Type}{payloadStr})";
         }
+
+        #region Type-safe constructors
+        public static Message UpdateName(string newName)
+        {
+            return new Message(MessageType.UpdateName, Encoding.UTF8.GetBytes(newName));
+        }
+        public static Message UpdateName(byte[] newName)
+        {
+            return new Message(MessageType.UpdateName, newName);
+        }
+        public static Message Surrender(float when)
+        {
+            return new Message(MessageType.Surrender, System.Text.Json.JsonSerializer.Serialize(when));
+        }
+
+        public static Message Connect(byte[] otherPlayerName)
+        {
+            return new Message(MessageType.Connect, otherPlayerName);
+        }
+        public static Message Ping()
+        {
+            return new Message(MessageType.Ping);
+        }
+        public static Message Pong()
+        {
+            return new Message(MessageType.Pong);
+        }
+        public static Message ApproveTeamChange()
+        {
+            return new Message(MessageType.ApproveTeamChange);
+        }
+        public static Message StartMatch(GameParams gameParams)
+        {
+            return new Message(MessageType.StartMatch, gameParams.Serialize());
+        }
+
+        #endregion
     }
 }

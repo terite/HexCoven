@@ -12,20 +12,20 @@ namespace HexCoven.Tests
             var data = ReadOnlySpan<byte>.Empty;
             var readResult = Message.TryRead(data, out Message message);
 
-            Assert.Equal(Message.TryReadResult.TooShort, readResult);
+            Assert.False(readResult);
             Assert.Equal(MessageType.None, message.Type);
         }
 
         [Fact]
         public void TestReadPingOnly()
         {
-            var pingMsg = new Message(MessageType.Ping);
+            var pingMsg = Message.Ping();
             var pingBuffer = new byte[pingMsg.TotalLength];
             pingMsg.WriteTo(pingBuffer);
 
             var readResult = Message.TryRead(pingBuffer, out Message message);
 
-            Assert.Equal(Message.TryReadResult.Success, readResult);
+            Assert.True(readResult);
             Assert.Equal(MessageType.Ping, message.Type);
 
             Assert.Equal(pingMsg.TotalLength, message.TotalLength);
@@ -35,13 +35,13 @@ namespace HexCoven.Tests
         public void TestReadUpdateName()
         {
             string newName = "Lance 💪";
-            var sentMsg = new Message(MessageType.UpdateName, newName);
+            var sentMsg = Message.UpdateName(newName);
             var data = new byte[sentMsg.TotalLength];
             sentMsg.WriteTo(data);
 
             var readResult = Message.TryRead(data, out Message recMsg);
 
-            Assert.Equal(Message.TryReadResult.Success, readResult);
+            Assert.True(readResult);
             Assert.Equal(MessageType.UpdateName, recMsg.Type);
 
             Assert.Equal(sentMsg.TotalLength, recMsg.TotalLength);

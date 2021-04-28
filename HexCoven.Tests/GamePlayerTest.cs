@@ -39,13 +39,13 @@ namespace HexCoven.Tests
             var serversClient = server.AcceptTcpClient();
 
             var player = new GamePlayer(client.Client);
-            player.Send(new Message(MessageType.Ping));
+            player.Send(Message.Ping());
 
             var readBuffer = new byte[100];
             serversClient.GetStream().Read(readBuffer, 0, readBuffer.Length);
 
             var readResult = Message.TryRead(readBuffer, out Message message);
-            Assert.Equal(Message.TryReadResult.Success, readResult);
+            Assert.True(readResult);
             Assert.Equal(MessageType.Ping, message.Type);
         }
 
