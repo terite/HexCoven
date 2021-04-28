@@ -131,6 +131,14 @@ namespace HexCoven
         {
             return new Message(MessageType.StartMatch, gameParams.Serialize());
         }
+        public static Message PreviewMovesOn()
+        {
+            return new Message(MessageType.PreviewMovesOn);
+        }
+        public static Message PreviewMovesOff()
+        {
+            return new Message(MessageType.PreviewMovesOff);
+        }
 
         #endregion
     }

@@ -24,6 +24,7 @@ namespace HexCoven
         readonly int gameId;
         readonly float TimerDuration = Settings.TimerDuration;
         readonly bool ShowClock = Settings.ShowClock;
+        bool previewMovesOn;
 
         private GameState _state = GameState.WaitingForPlayers;
         public GameState State {
@@ -110,13 +111,6 @@ namespace HexCoven
                 throw new Exception("Game is full");
             }
 
-            SetupPlayer(player);
-
-            return player1 != null && player2 != null;
-        }
-
-        private void SetupPlayer(GamePlayer player)
-        {
             player.OnMessage += Player_OnMessage;
             player.OnDisconnect += Player_OnDisconnect;
 
@@ -124,6 +118,7 @@ namespace HexCoven
             if (otherPlayer != null)
             {
                 player.SetOtherName(NiceName(otherPlayer));
+                player.SetPreviewMovesOn(previewMovesOn);
                 if (otherPlayer.Team == player.Team)
                     player.SwapTeam();
 
@@ -132,7 +127,10 @@ namespace HexCoven
             else
             {
                 player.SetOtherName(PendingName);
+                previewMovesOn = player.PreviewMovesOn;
             }
+
+            return player1 != null && player2 != null;
         }
 
         string NiceName(GamePlayer player)
@@ -227,8 +225,6 @@ namespace HexCoven
                 case MessageType.Pong:
                 case MessageType.ProposeTeamChange:
                 case MessageType.DenyTeamChange:
-                case MessageType.PreviewMovesOn:
-                case MessageType.PreviewMovesOff:
 
                 // Forward or warn
                 case MessageType.Promotion:
@@ -249,6 +245,14 @@ namespace HexCoven
                 // Messages that need to be handled
                 case MessageType.Ping:
                     sender.Send(Message.Pong());
+                    break;
+                case MessageType.PreviewMovesOn:
+                    previewMovesOn = true;
+                    ForwardMessage(in message, otherPlayer);
+                    break;
+                case MessageType.PreviewMovesOff:
+                    previewMovesOn = false;
+                    ForwardMessage(in message, otherPlayer);
                     break;
 
                 case MessageType.UpdateName:
@@ -340,8 +344,8 @@ namespace HexCoven
                 State = GameState.Playing;
                 p1.SetOtherName(NiceName(p2));
                 p2.SetOtherName(NiceName(p1));
-                p1.Send(Message.StartMatch(new GameParams(p1.Team, p1.PreviewMovesOn, TimerDuration, ShowClock)));
-                p2.Send(Message.StartMatch(new GameParams(p2.Team, p2.PreviewMovesOn, TimerDuration, ShowClock)));
+                p1.Send(Message.StartMatch(new GameParams(p1.Team, previewMovesOn, TimerDuration, ShowClock)));
+                p2.Send(Message.StartMatch(new GameParams(p2.Team, previewMovesOn, TimerDuration, ShowClock)));
                 Console.WriteLine($"Starting game {this}");
             }
             else

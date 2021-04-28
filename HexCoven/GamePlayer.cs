@@ -156,6 +156,14 @@ namespace HexCoven
             }
         }
 
+        public void SetPreviewMovesOn(bool previewMovesOn)
+        {
+            if (previewMovesOn)
+                Send(Message.PreviewMovesOn());
+            else
+                Send(Message.PreviewMovesOff());
+        }
+
         private void HandleReceiveMessage(in Message message)
         {
             switch (message.Type)
@@ -239,6 +247,12 @@ namespace HexCoven
             {
                 case MessageType.Connect:
                     ReceivedConnect = true;
+                    break;
+                case MessageType.PreviewMovesOff:
+                    PreviewMovesOn = false;
+                    break;
+                case MessageType.PreviewMovesOn:
+                    PreviewMovesOn = true;
                     break;
             }
         }
