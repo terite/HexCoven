@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net.Sockets;
 using System.Text;
 
@@ -6,7 +6,8 @@ namespace HexCoven
 {
     public readonly ref struct Message
     {
-        public enum TryReadResult {
+        public enum TryReadResult
+        {
             TooShort,
             InvalidSignature,
             Success,
@@ -50,7 +51,7 @@ namespace HexCoven
                 {
                     throw new ArgumentException("Invalid message signature");
                 }
-             }
+            }
 
             ushort payloadLength = BitConverter.ToUInt16(data.Slice(Signature.Length));
             if (data.Length < (HeaderLength + payloadLength))
@@ -65,7 +66,7 @@ namespace HexCoven
             return true;
         }
 
-        public void WriteTo (Span<byte> target)
+        public void WriteTo(Span<byte> target)
         {
             Signature.CopyTo(target);
             if (!BitConverter.TryWriteBytes(target.Slice(Signature.Length), (ushort)Payload.Length))

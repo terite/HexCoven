@@ -1,4 +1,4 @@
-﻿namespace HexCoven
+namespace HexCoven
 {
     public enum MessageType : byte
     {

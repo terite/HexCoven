@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Linq;
 using System.Buffers;
 using System.Net.Sockets;
@@ -17,7 +17,7 @@ namespace HexCoven
         public event Action<GamePlayer>? OnDisconnect;
 
         readonly Socket Socket;
-        readonly SocketAsyncEventArgs ReadArg; 
+        readonly SocketAsyncEventArgs ReadArg;
         string? closedReason = null;
 
         byte[] receiveBuffer = new byte[ushort.MaxValue];
@@ -99,7 +99,8 @@ namespace HexCoven
         private void ProcessReceive(SocketAsyncEventArgs e, bool receiveAgain)
         {
             // check if the remote host closed the connection
-            if (e.BytesTransferred == 0) {
+            if (e.BytesTransferred == 0)
+            {
                 Close("No bytes transferred");
                 return;
             }
@@ -310,7 +311,8 @@ namespace HexCoven
             try
             {
                 remoteEp = Socket.RemoteEndPoint?.ToString() ?? "this will never happen";
-            } catch (ObjectDisposedException)
+            }
+            catch (ObjectDisposedException)
             {
                 remoteEp = "<disconnected>";
             }

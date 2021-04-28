@@ -1,4 +1,4 @@
-﻿#nullable enable
+#nullable enable
 using System;
 using System.Net;
 using System.Net.Sockets;
@@ -6,10 +6,10 @@ using Xunit;
 
 namespace HexCoven.Tests
 {
-    public class GamePlayerTest: IDisposable
+    public class GamePlayerTest : IDisposable
     {
         TcpListener? server = null;
-        
+
         TcpListener StartServer()
         {
             if (server != null)

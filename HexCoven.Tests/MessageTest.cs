@@ -1,4 +1,4 @@
-﻿using HexCoven;
+using HexCoven;
 using System;
 using Xunit;
 
@@ -30,7 +30,7 @@ namespace HexCoven.Tests
 
             Assert.Equal(pingMsg.TotalLength, message.TotalLength);
         }
-        
+
         [Fact]
         public void TestReadUpdateName()
         {

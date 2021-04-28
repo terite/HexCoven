@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
@@ -27,7 +27,8 @@ namespace HexCoven
         bool previewMovesOn;
 
         private GameState _state = GameState.WaitingForPlayers;
-        public GameState State {
+        public GameState State
+        {
             get => _state;
             set
             {
