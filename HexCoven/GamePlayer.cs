@@ -28,7 +28,7 @@ namespace HexCoven
         public string PlayerName { get; private set; }
         public ChessTeam Team { get; set; } = ChessTeam.Black;
         public bool IsReady { get; set; }
-        public bool PreviewMovesOn { get; set; }
+        public bool PreviewMovesOn { get; set; } = true;
 
         public bool SentSurrender { get; set; }
         public bool SentDisconnect { get; set; }
