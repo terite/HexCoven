@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Buffers;
 using System.Net.Sockets;
 using System.Text;
@@ -21,7 +20,8 @@ namespace HexCoven
         string? closedReason = null;
 
         byte[] receiveBuffer = new byte[ushort.MaxValue];
-        ushort receiveBufferLen = 0;
+        int receiveBufferStart = 0;
+        int receiveBufferEnd = 0;
 
         Timer? initializeTimer;
 
@@ -40,10 +40,9 @@ namespace HexCoven
         {
             playerId = ++lastPlayerId;
             PlayerName = $"Opponent";
-            var readArg = new SocketAsyncEventArgs();
-            readArg.Completed += IO_Completed;
-            readArg.SetBuffer(new byte[10 * 1024]);
-            this.ReadArg = readArg;
+
+            ReadArg = new SocketAsyncEventArgs();
+            ReadArg.Completed += IO_Completed;
 
             Socket = socket;
 
@@ -77,7 +76,9 @@ namespace HexCoven
         {
             while (true)
             {
-                if (closedReason != null) break;
+                if (closedReason != null)
+                    break;
+                ReadArg.SetBuffer(receiveBuffer, receiveBufferEnd, receiveBuffer.Length - receiveBufferEnd);
                 if (!Socket.ReceiveAsync(ReadArg))
                     ProcessReceive(ReadArg, false);
                 else
@@ -98,22 +99,24 @@ namespace HexCoven
         }
         private void ProcessReceive(SocketAsyncEventArgs e, bool receiveAgain)
         {
-            // check if the remote host closed the connection
-            if (e.BytesTransferred == 0)
-            {
-                Close("No bytes transferred");
-                return;
-            }
             if (e.SocketError != SocketError.Success)
             {
                 Close($"Socket error: {e.SocketError}");
                 return;
             }
 
+            // check if the remote host closed the connection
+            if (e.BytesTransferred == 0)
+            {
+                Close("No bytes transferred");
+                return;
+            }
+
+            receiveBufferEnd += e.BytesTransferred;
+
             try
             {
-                var received = e.MemoryBuffer.Slice(e.Offset, e.BytesTransferred);
-                ReceiveBytes(received);
+                ReadMessages();
             }
             catch (Exception ex)
             {
@@ -131,29 +134,36 @@ namespace HexCoven
             Team = Team == ChessTeam.Black ? ChessTeam.White : ChessTeam.Black;
         }
 
-        void ReceiveBytes(in ReadOnlyMemory<byte> received)
+        void ReadMessages()
         {
-            received.CopyTo(new Memory<byte>(receiveBuffer, receiveBufferLen, receiveBuffer.Length - receiveBufferLen));
-            receiveBufferLen += (ushort)received.Length;
-
-            ushort unhandledIndex = 0;
-
-            while (unhandledIndex < receiveBufferLen)
+            while (receiveBufferStart < receiveBufferEnd)
             {
-                var result = Message.TryRead(new ReadOnlySpan<byte>(receiveBuffer, unhandledIndex, receiveBufferLen), out Message message);
+                var mem = new ReadOnlySpan<byte>(receiveBuffer, receiveBufferStart, receiveBufferEnd);
+                var result = Message.TryRead(mem, out Message message);
                 if (!result)
                     break;
 
                 HandleReceiveMessage(in message);
-                unhandledIndex += message.TotalLength;
+                receiveBufferStart += message.TotalLength;
             }
 
-            receiveBufferLen -= unhandledIndex;
-
-            // Move remaining bytes to the beginning of the buffer
-            if (receiveBufferLen > 0)
+            int unreadBytes = receiveBufferEnd - receiveBufferStart;
+            if (unreadBytes == 0)
             {
-                Array.Copy(receiveBuffer, unhandledIndex, receiveBuffer, 0, receiveBufferLen);
+                // Buffer is empty
+                receiveBufferStart = 0;
+                receiveBufferEnd = 0;
+            }
+            else if (unreadBytes > 0)
+            {
+                // Move remaining bytes to the beginning of the buffer
+                Array.Copy(receiveBuffer, receiveBufferStart, receiveBuffer, 0, unreadBytes);
+                receiveBufferStart = 0;
+                receiveBufferEnd = unreadBytes;
+            }
+            else
+            {
+                throw new Exception($"Buffer end ({receiveBufferEnd}) is beyond start ({receiveBufferStart})");
             }
         }
 
@@ -274,7 +284,7 @@ namespace HexCoven
         public void Close(string reason)
         {
             if (Settings.LogCloseCalls)
-                Console.WriteLine($"GamePlayer.Close() call: {reason}");
+                Console.WriteLine($"{this} closed: {reason}");
 
             if (initializeTimer != null)
             {
