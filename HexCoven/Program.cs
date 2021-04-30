@@ -1,6 +1,4 @@
 using System;
-using System.Diagnostics;
-using System.Net;
 using System.Net.Sockets;
 using System.Threading;
 
@@ -17,8 +15,7 @@ namespace HexCoven
     {
         public static GameManager pendingGame = new GameManager();
 
-        readonly static EndPoint localEndPoint = new IPEndPoint(IPAddress.Any, 65530);
-        readonly static Socket listenSocket = new Socket(localEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        readonly static TcpListener server = TcpListener.Create(65530);
 
         static bool listening = true;
 
@@ -31,15 +28,11 @@ namespace HexCoven
         {
             Console.CancelKeyPress += Console_CancelKeyPress;
             Console.WriteLine("Press CTRL-C to exit");
-            // create the socket which listens for incoming connections
-            listenSocket.Bind(localEndPoint);
 
-            // start the server with a listen backlog of 100 connections
-            listenSocket.Listen(100);
+            server.Start();
+            StartAccept();
 
-            StartAccept(null);
-
-            Console.WriteLine($"Listening to {localEndPoint}");
+            Console.WriteLine($"Listening to {server.LocalEndpoint}");
 
             while (listening)
                 Thread.Yield();
@@ -67,7 +60,7 @@ namespace HexCoven
 
                 Console.WriteLine($"Exiting with {NumConnectedPlayers} player(s) still connected");
                 listening = false;
-                listenSocket.Close();
+                server.Stop();
             }
             else
             {
@@ -94,57 +87,26 @@ namespace HexCoven
             }
         }
 
-        static void StartAccept(SocketAsyncEventArgs? acceptEventArg)
+        static void StartAccept()
         {
-            if (acceptEventArg == null)
-            {
-                acceptEventArg = new SocketAsyncEventArgs();
-                acceptEventArg.Completed += new EventHandler<SocketAsyncEventArgs>(AcceptEventArg_Completed);
-            }
-            else
-            {
-                // socket must be cleared since the context object is being reused
-                acceptEventArg.AcceptSocket = null;
-            }
-
-            bool willRaiseEvent = listenSocket.AcceptAsync(acceptEventArg);
-            if (!willRaiseEvent)
-                ProcessAccept(acceptEventArg);
+            server.BeginAcceptSocket(ProcessAccept, null);
         }
 
-        static void AcceptEventArg_Completed(object? sender, SocketAsyncEventArgs e)
+        static private void ProcessAccept(IAsyncResult ar)
         {
-            switch (e.LastOperation)
-            {
-                case SocketAsyncOperation.Accept:
-                    ProcessAccept(e);
-                    break;
-                default:
-                    Console.Error.WriteLine($"Unexpected socket operation: {e.LastOperation}");
-                    break;
-            }
-        }
+            Socket socket = server.EndAcceptSocket(ar);
+            Console.WriteLine($"New connection from {socket}");
 
-        static private void ProcessAccept(SocketAsyncEventArgs e)
-        {
-            if (e.SocketError != SocketError.Success)
-            {
-                if (e.SocketError != SocketError.OperationAborted)
-                    Console.Error.WriteLine($"Error while trying to accept: {e.SocketError}");
-                return;
-            }
-            Console.WriteLine($"New connection from {e.AcceptSocket!.RemoteEndPoint}");
-
-            var player = new GamePlayer(e.AcceptSocket);
+            var player = new GamePlayer(socket);
             player.OnInitialized += Player_OnInitialized;
-            player.OnDisconnect += Player_OnDisconnect;
             player.Listen();
 
-            StartAccept(e);
+            StartAccept();
         }
 
         private static void Player_OnInitialized(GamePlayer player)
         {
+            player.OnDisconnect += Player_OnDisconnect;
             Interlocked.Increment(ref NumConnectedPlayers);
             Console.WriteLine($"We now have {NumConnectedPlayers} connected players");
             PlacePlayer(player);
