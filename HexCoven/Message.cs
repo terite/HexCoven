@@ -13,7 +13,7 @@ namespace HexCoven
             Success,
         }
 
-        static byte[] Signature = { 1, 2, 3, 4, 5 };
+        const int SignatureLength = 5;
         static ushort HeaderLength = 5 + 2 + 1;
 
         public readonly MessageType Type;
@@ -45,7 +45,7 @@ namespace HexCoven
                 message = default;
                 return false;
             }
-            for (int i = 0; i < Signature.Length; i++)
+            for (int i = 0; i < SignatureLength; i++)
             {
                 if (data[i] != i + 1)
                 {
@@ -53,14 +53,14 @@ namespace HexCoven
                 }
             }
 
-            ushort payloadLength = BitConverter.ToUInt16(data.Slice(Signature.Length));
+            ushort payloadLength = BitConverter.ToUInt16(data.Slice(SignatureLength));
             if (data.Length < (HeaderLength + payloadLength))
             {
                 message = default;
                 return false;
             }
 
-            byte type = data[Signature.Length + 2];
+            byte type = data[SignatureLength + 2];
             ReadOnlySpan<byte> payload = payloadLength > 0 ? data.Slice(HeaderLength, payloadLength) : ReadOnlySpan<byte>.Empty;
             message = new Message((MessageType)type, payload);
             return true;
@@ -68,14 +68,19 @@ namespace HexCoven
 
         public void WriteTo(Span<byte> target)
         {
-            Signature.CopyTo(target);
-            if (!BitConverter.TryWriteBytes(target.Slice(Signature.Length), (ushort)Payload.Length))
+            if (target.Length < (8 + Payload.Length))
+                throw new ArgumentOutOfRangeException($"Needed {8 + Payload.Length} bytes to write message, but only have {target.Length}");
+
+            for (byte i = 0; i < SignatureLength; i++)
+                target[i] = (byte)(i + 1);
+
+            if (!BitConverter.TryWriteBytes(target.Slice(SignatureLength), (ushort)Payload.Length))
                 throw new InvalidOperationException("Failed to write signature bytes");
 
-            target[Signature.Length + sizeof(ushort)] = (byte)Type;
+            target[SignatureLength + sizeof(ushort)] = (byte)Type;
 
             if (Payload.Length > 0)
-                Payload.CopyTo(target.Slice(Signature.Length + sizeof(ushort) + sizeof(byte)));
+                Payload.CopyTo(target.Slice(SignatureLength + sizeof(ushort) + sizeof(byte)));
         }
 
         public override string ToString()
