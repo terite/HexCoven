@@ -138,7 +138,7 @@ namespace HexCoven
         {
             while (receiveBufferStart < receiveBufferEnd)
             {
-                var mem = new ReadOnlySpan<byte>(receiveBuffer, receiveBufferStart, receiveBufferEnd);
+                var mem = new ReadOnlySpan<byte>(receiveBuffer, receiveBufferStart, receiveBufferEnd - receiveBufferStart);
                 var result = Message.TryRead(mem, out Message message);
                 if (!result)
                     break;
