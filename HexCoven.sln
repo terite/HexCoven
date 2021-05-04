@@ -5,7 +5,9 @@ VisualStudioVersion = 16.0.31019.35
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HexCoven", "HexCoven\HexCoven.csproj", "{B1708764-916E-4BB4-A053-55D882A20A4B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexCoven.Tests", "HexCoven.Tests\HexCoven.Tests.csproj", "{EA1388BD-D41D-489E-85DE-BFACFC6ADCE8}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "HexCoven.Tests", "HexCoven.Tests\HexCoven.Tests.csproj", "{EA1388BD-D41D-489E-85DE-BFACFC6ADCE8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "HexCoven.PerfTool", "HexCoven.PerfTool\HexCoven.PerfTool.csproj", "{C49D9D98-0A5C-40B4-8C80-681E5182B98B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{EA1388BD-D41D-489E-85DE-BFACFC6ADCE8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{EA1388BD-D41D-489E-85DE-BFACFC6ADCE8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{EA1388BD-D41D-489E-85DE-BFACFC6ADCE8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C49D9D98-0A5C-40B4-8C80-681E5182B98B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C49D9D98-0A5C-40B4-8C80-681E5182B98B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C49D9D98-0A5C-40B4-8C80-681E5182B98B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C49D9D98-0A5C-40B4-8C80-681E5182B98B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
