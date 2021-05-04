@@ -95,7 +95,7 @@ namespace HexCoven
         static private void ProcessAccept(IAsyncResult ar)
         {
             Socket socket = server.EndAcceptSocket(ar);
-            Console.WriteLine($"New connection from {socket}");
+            Console.WriteLine($"New connection from {socket.RemoteEndPoint}");
 
             var player = new GamePlayer(socket);
             player.OnInitialized += Player_OnInitialized;
