@@ -17,7 +17,8 @@ namespace HexCoven
 
         readonly static TcpListener server = TcpListener.Create(65530);
 
-        static bool listening = true;
+        static ManualResetEvent doneListening = new ManualResetEvent(false);
+        static bool listening = false;
 
         public static int NumConnectedPlayers = 0;
         public static int NumActiveGames = 0;
@@ -29,13 +30,13 @@ namespace HexCoven
             Console.CancelKeyPress += Console_CancelKeyPress;
             Console.WriteLine("Press CTRL-C to exit");
 
+            listening = true;
             server.Start();
             StartAccept();
 
             Console.WriteLine($"Listening to {server.LocalEndpoint}");
 
-            while (listening)
-                Thread.Yield();
+            doneListening.WaitOne();
 
             Console.WriteLine("No longer listening!");
         }
@@ -60,6 +61,7 @@ namespace HexCoven
 
                 Console.WriteLine($"Exiting with {NumConnectedPlayers} player(s) still connected");
                 listening = false;
+                doneListening.Set();
                 server.Stop();
             }
             else
