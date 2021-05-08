@@ -59,13 +59,13 @@ namespace HexCoven.PerfTool
             int bufWriteStart = 0;
 
             var pingTimer = new System.Timers.Timer();
-            pingTimer.Interval = 100;
+            pingTimer.Interval = 0.00001;
             pingTimer.AutoReset = true;
             pingTimer.Elapsed += PingTimer_Tick;
             pingTimer.Start();
 
             var screenTimer = new System.Timers.Timer();
-            screenTimer.Interval = 100;
+            screenTimer.Interval = 1000;
             screenTimer.AutoReset = true;
             screenTimer.Elapsed += ScreenTimer_Tick;
             screenTimer.Start();
@@ -145,17 +145,20 @@ namespace HexCoven.PerfTool
 
         static void ScreenTimer_Tick(object source, System.Timers.ElapsedEventArgs e)
         {
+            var numMsgs = System.Threading.Interlocked.Exchange(ref messagesReceived, 0);
             var elapsed = latency;
-            Console.Write($"latency={elapsed.Ticks,6} ticks ({elapsed.TotalMilliseconds,4:F1} ms) opponent={opponentName}\r");
+            Console.Write($"latency={elapsed.Ticks,6} ticks ({elapsed.TotalMilliseconds,4:F1} ms), msgs={numMsgs}, opponent={opponentName}\r");
         }
 
         static string opponentName = string.Empty;
         static TimeSpan latency;
+        static int messagesReceived = 0;
 
         static System.Diagnostics.Stopwatch pingWatch = new System.Diagnostics.Stopwatch();
 
         private static void Dispatch(in Message message)
         {
+            System.Threading.Interlocked.Increment(ref messagesReceived);
             // Console.Write("\r" + new string(' ', Console.WindowWidth) + "\r"); // clear line
             switch (message.Type)
             {
