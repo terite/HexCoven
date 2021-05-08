@@ -2,6 +2,7 @@ namespace HexCoven
 {
     public static class Settings
     {
+        // Values will be set by HexCoven CLI
         internal static bool LogCloseCalls = true;
         internal static bool LogOutbound = true;
         internal static bool LogOutboundPing = false;

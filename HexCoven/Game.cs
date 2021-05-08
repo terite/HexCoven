@@ -1,11 +1,10 @@
 using System;
-using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 
 namespace HexCoven
 {
-    public class GameManager
+    public class Game
     {
         static int lastGameId = 0;
 
@@ -54,7 +53,7 @@ namespace HexCoven
             }
         }
 
-        public GameManager()
+        public Game()
         {
             gameId = ++lastGameId;
             if (Settings.MatchingIntervalMs > 0)
@@ -369,13 +368,13 @@ namespace HexCoven
             lock (Program.pendingGame)
             {
                 if (Program.pendingGame == this)
-                    Program.pendingGame = new GameManager();
+                    Program.pendingGame = new Game();
             }
         }
 
         public override string ToString()
         {
-            return $"GameManager(id={gameId}, p1={player1}, p2={player2})";
+            return $"Game#{gameId}(p1={player1}, p2={player2})";
         }
 
         private GamePlayer? GetOtherPlayer(GamePlayer player)

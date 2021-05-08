@@ -317,6 +317,11 @@ namespace HexCoven
 
         public override string ToString()
         {
+            return $"GamePlayer#{playerId}";
+        }
+
+        public string PlayerDescription()
+        {
             string remoteEp;
             try
             {
