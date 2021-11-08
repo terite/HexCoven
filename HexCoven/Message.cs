@@ -145,6 +145,14 @@ namespace HexCoven
         {
             return new Message(MessageType.PreviewMovesOff);
         }
+        public static Message OpponentSearching()
+        {
+            return new Message(MessageType.OpponentSearching);
+        }
+        public static Message OpponentFound()
+        {
+            return new Message(MessageType.OpponentFound);
+        }
 
         #endregion
     }

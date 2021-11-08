@@ -123,11 +123,14 @@ namespace HexCoven
                     player.SwapTeam();
 
                 otherPlayer.SetOtherName(NiceName(player));
+                player.Send(Message.OpponentFound());
+                otherPlayer.Send(Message.OpponentFound());
             }
             else
             {
                 player.SetOtherName(PendingName);
                 previewMovesOn = player.PreviewMovesOn;
+                player.Send(Message.OpponentSearching());
             }
 
             return player1 != null && player2 != null;
