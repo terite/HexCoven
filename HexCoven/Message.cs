@@ -153,6 +153,14 @@ namespace HexCoven
         {
             return new Message(MessageType.OpponentFound);
         }
+        public static Message Ready()
+        {
+            return new Message(MessageType.Ready);
+        }
+        public static Message Unready()
+        {
+            return new Message(MessageType.Unready);
+        }
 
         #endregion
     }

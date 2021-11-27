@@ -125,12 +125,23 @@ namespace HexCoven
                 otherPlayer.SetOtherName(NiceName(player));
                 player.Send(Message.OpponentFound());
                 otherPlayer.Send(Message.OpponentFound());
+
+                if (player.IsReady)
+                    otherPlayer.Send(Message.Ready());
+                else
+                    otherPlayer.Send(Message.Unready());
+
+                if (otherPlayer.IsReady)
+                    player.Send(Message.Ready());
+                else
+                    player.Send(Message.Unready());
             }
             else
             {
                 player.SetOtherName(PendingName);
                 previewMovesOn = player.PreviewMovesOn;
                 player.Send(Message.OpponentSearching());
+                player.Send(Message.Unready());
             }
 
             return player1 != null && player2 != null;
@@ -285,6 +296,7 @@ namespace HexCoven
                 case MessageType.Ready:
                 case MessageType.Unready:
                     Player_OnReadyChange();
+                    ForwardMessage(in message, otherPlayer);
                     break;
 
                 // Should never receive
