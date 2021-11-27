@@ -138,7 +138,7 @@ namespace HexCoven
 
         string NiceName(GamePlayer player)
         {
-            if (State == GameState.WaitingForPlayers)
+            if (Settings.ShowReadyInName && State == GameState.WaitingForPlayers)
                 return player.IsReady ? $"{player.PlayerName} (+)" : $"{player.PlayerName} (-)";
             else
                 return player.PlayerName;
